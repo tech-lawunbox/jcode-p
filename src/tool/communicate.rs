@@ -1245,7 +1245,14 @@ impl Tool for CommunicateTool {
     }
 
     fn description(&self) -> &str {
-        "Coordinate agents. For spawn, prefer providing a prompt so the new agent starts with a concrete task instead of idling. Spawned/assigned agents automatically report their final response back to the owning coordinator."
+        "Coordinate agents in a swarm. Key patterns:\n\
+        - First: `swarm assign_role role=coordinator` (required to spawn)\n\
+        - Spawn: `swarm spawn prompt=\"task description\"` (prompt required, worker auto-reports back)\n\
+        - Assign: `swarm assign_task task_id=X target_session=Y` (assigns plan item)\n\
+        - Wait: `swarm await_members timeout_minutes=5` (waits for workers to complete)\n\
+        - List: `swarm list` (see all swarm members and their status)\n\
+        - Report: `swarm report message=\"...\" status=ready` (worker submits completion)\n\
+        Workers automatically report back to coordinator when done. Use run_id to group related tasks."
     }
 
     fn parameters_schema(&self) -> Value {

@@ -1,5 +1,6 @@
 use super::{Registry, Tool, ToolContext, ToolOutput};
 use crate::agent::Agent;
+use crate::background::TaskResult;
 use crate::bus::{Bus, BusEvent, ToolSummary, ToolSummaryState};
 use crate::logging;
 use crate::protocol::HistoryMessage;
@@ -8,7 +9,7 @@ use crate::session::Session;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -57,6 +58,9 @@ struct SubagentInput {
     output_mode: SubagentOutputMode,
     #[serde(rename = "command", default)]
     _command: Option<String>,
+    /// Run subagent in background, non-blocking. Returns task ID for later waiting.
+    #[serde(default)]
+    run_in_background: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -118,6 +122,10 @@ impl Tool for SubagentTool {
                 "command": {
                     "type": "string",
                     "description": "Source command."
+                },
+                "run_in_background": {
+                    "type": "boolean",
+                    "description": "Run subagent in background, non-blocking. Returns task ID for later waiting. When true, use `bg` tool to check status or wait for completion."
                 }
             }
         })
@@ -125,6 +133,32 @@ impl Tool for SubagentTool {
 
     async fn execute(&self, input: Value, ctx: ToolContext) -> Result<ToolOutput> {
         let params: SubagentInput = serde_json::from_value(input)?;
+
+        // Resolve config defaults
+        let cfg = crate::config::config();
+        let run_in_background = if params.run_in_background {
+            true
+        } else {
+            cfg.subagent.run_in_background.unwrap_or(false)
+        };
+        let output_mode = params.output_mode;
+        let subagent_model = params.model.clone()
+            .or_else(|| cfg.subagent.model.clone());
+
+        // Merge blocked tools: always blocked + config blocked
+        let mut blocked = vec![
+            "subagent".to_string(),
+            "task".to_string(),
+            "todo".to_string(),
+            "todowrite".to_string(),
+            "todoread".to_string(),
+        ];
+        if let Some(ref config_blocked) = cfg.subagent.blocked_tools {
+            blocked.extend(config_blocked.iter().cloned());
+        }
+        // Config notify/wake for background spawn
+        let bg_notify = cfg.subagent.notify.unwrap_or(true);
+        let bg_wake = cfg.subagent.wake.unwrap_or(true);
 
         let mut session = if let Some(session_id) = &params.session_id {
             Session::load(session_id).unwrap_or_else(|err| {
@@ -140,7 +174,7 @@ impl Tool for SubagentTool {
         let parent_subagent_model = Self::preferred_parent_subagent_model(&ctx.session_id);
         let provider_model = self.provider.model();
         let resolved_model = Self::resolve_model(
-            params.model.as_deref(),
+            subagent_model.as_deref(),
             session.model.as_deref(),
             parent_subagent_model.as_deref(),
             &provider_model,
@@ -154,8 +188,8 @@ impl Tool for SubagentTool {
         session.save()?;
 
         let mut allowed: HashSet<String> = self.registry.tool_names().await.into_iter().collect();
-        for blocked in ["subagent", "task", "todo", "todowrite", "todoread"] {
-            allowed.remove(blocked);
+        for blocked_tool in blocked {
+            allowed.remove(&blocked_tool);
         }
 
         let summary_map: Arc<Mutex<HashMap<String, ToolSummary>>> =
@@ -201,6 +235,82 @@ impl Tool for SubagentTool {
             "Subagent starting: {} (type: {})",
             params.description, params.subagent_type
         ));
+
+        // Run in background if requested
+        if run_in_background {
+            let provider = self.provider.clone();
+            let registry = self.registry.clone();
+            let session_id = session.id.clone();
+            let subagent_description = params.description.clone();
+            let _subagent_type = params.subagent_type.clone();
+            let prompt = params.prompt.clone();
+            let output_mode = output_mode;
+            let _working_dir = ctx.working_dir.clone();
+
+            let info = crate::background::global()
+                .spawn_with_notify(
+                    "subagent",
+                    Some(subagent_description.clone()),
+                    &ctx.session_id,
+                    bg_notify,
+                    bg_wake,
+                    move |_output_path| async move {
+                        // Re-load session from disk (it was saved earlier)
+                        let session = Session::load(&session_id)
+                            .map_err(|e| anyhow::anyhow!("Failed to load session: {}", e))?;
+
+                        // Re-resolve model (simplified - use provider default)
+                        let allowed: HashSet<String> = registry.tool_names().await.into_iter().collect();
+                        let allowed: HashSet<String> = allowed
+                            .into_iter()
+                            .filter(|name| !["subagent", "task", "todo", "todowrite", "todoread"].contains(&name.as_str()))
+                            .collect();
+
+                        let mut agent = Agent::new_with_session(
+                            provider.fork(),
+                            registry,
+                            session,
+                            Some(allowed),
+                        );
+
+                        // Run the subagent
+                        let result = agent.run_once_capture(&prompt).await;
+
+                        // Get results
+                        let sub_session_id = agent.session_id().to_string();
+                        let final_text = result.map_err(|e| anyhow::anyhow!("{}", e))?;
+                        let history = if output_mode == SubagentOutputMode::Compact {
+                            Some(agent.get_history())
+                        } else {
+                            None
+                        };
+
+                        // Format output for return value
+                        let _output = format_subagent_output(
+                            &final_text,
+                            &sub_session_id,
+                            output_mode,
+                            history.as_deref(),
+                            None,
+                        );
+
+                        Ok(TaskResult::completed(None))
+                    },
+                )
+                .await;
+
+            return Ok(ToolOutput::new(format!(
+                "Subagent '{}' started in background with task ID: {}",
+                subagent_description,
+                info.task_id
+            ))
+            .with_metadata(json!({
+                "taskId": info.task_id,
+                "description": subagent_description,
+                "type": "subagent",
+                "hint": "Use bg tool to check status or wait for completion"
+            })));
+        }
 
         // Run subagent on an isolated provider fork so model/session changes do not
         // mutate the coordinator's provider instance.

@@ -145,3 +145,4 @@ include!("comm_control_tests/await_disconnect.rs");
 include!("comm_control_tests/await_any.rs");
 include!("comm_control_tests/await_reload_deadline.rs");
 include!("comm_control_tests/await_reload_final.rs");
+include!("comm_control_tests/swarm_report_delivery_test.rs");

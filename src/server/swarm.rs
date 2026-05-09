@@ -1,5 +1,5 @@
 use super::state::{MAX_EVENT_HISTORY, fanout_session_event};
-use super::{FileAccess, SwarmEvent, SwarmEventType, SwarmMember, SwarmState, VersionedPlan};
+use super::{FileAccess, SessionAgents, SwarmEvent, SwarmEventType, SwarmMember, SwarmState, VersionedPlan};
 use super::{persist_swarm_state_for, remove_persisted_swarm_state_for};
 use crate::agent::Agent;
 use crate::plan::{PlanItem, newly_ready_item_ids};
@@ -686,8 +686,22 @@ pub(super) async fn update_member_status(
         event_history,
         event_counter,
         swarm_event_tx,
+        None,
     )
     .await;
+}
+
+/// Set the report_back_to_session_id on a swarm member.
+/// This ensures the member reports completion to the specified session.
+pub(super) async fn set_member_report_back_to(
+    session_id: &str,
+    report_to_session_id: &str,
+    swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
+) {
+    let mut members = swarm_members.write().await;
+    if let Some(member) = members.get_mut(session_id) {
+        member.report_back_to_session_id = Some(report_to_session_id.to_string());
+    }
 }
 
 #[expect(
@@ -704,6 +718,7 @@ pub(super) async fn update_member_status_with_report(
     event_history: Option<&Arc<RwLock<std::collections::VecDeque<SwarmEvent>>>>,
     event_counter: Option<&Arc<std::sync::atomic::AtomicU64>>,
     swarm_event_tx: Option<&broadcast::Sender<SwarmEvent>>,
+    sessions: Option<&SessionAgents>,
 ) {
     let completion_report = normalize_completion_report(completion_report);
     let (
@@ -813,10 +828,21 @@ pub(super) async fn update_member_status_with_report(
                             scope: Some("swarm".to_string()),
                             channel: None,
                         },
-                        message: msg,
+                        message: msg.clone(),
                     },
                 )
                 .await;
+
+                // Inject swarm completion report into coordinator's pending alerts
+                // so it appears in the agent's next conversation turn
+                if let Some(sessions) = sessions {
+                    let sessions_guard = sessions.read().await;
+                    if let Some(agent_arc) = sessions_guard.get(&recipient_session_id) {
+                        if let Ok(mut agent) = agent_arc.try_lock() {
+                            agent.push_alert(msg);
+                        }
+                    }
+                }
             }
         }
     }
@@ -1380,6 +1406,7 @@ mod tests {
             Some("Validated the parser and all tests passed.".to_string()),
             &swarm_members,
             &swarms_by_id,
+            None,
             None,
             None,
             None,

@@ -791,3 +791,48 @@ impl Default for GatewayConfig {
         }
     }
 }
+
+/// Batch tool configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BatchConfig {
+    /// Maximum number of parallel tool calls in a batch operation (default: 10)
+    pub max_parallel: Option<usize>,
+}
+
+impl Default for BatchConfig {
+    fn default() -> Self {
+        Self { max_parallel: None }
+    }
+}
+
+/// Subagent tool configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SubagentConfig {
+    /// Default run_in_background for subagent tool (default: false)
+    pub run_in_background: Option<bool>,
+    /// Default output mode: "answer", "compact", or "full_transcript" (default: "answer")
+    pub output_mode: Option<String>,
+    /// Default model for subagents (empty = use parent's model)
+    pub model: Option<String>,
+    /// Additional tools to block from subagents (always blocked: subagent, task, todo, todowrite, todoread)
+    pub blocked_tools: Option<Vec<String>>,
+    /// Notify when background subagent completes (default: true)
+    pub notify: Option<bool>,
+    /// Wake agent when background subagent completes (default: true)
+    pub wake: Option<bool>,
+}
+
+impl Default for SubagentConfig {
+    fn default() -> Self {
+        Self {
+            run_in_background: None,
+            output_mode: None,
+            model: None,
+            blocked_tools: None,
+            notify: None,
+            wake: None,
+        }
+    }
+}

@@ -4,12 +4,12 @@
 //! Environment variables override config file settings.
 
 pub use jcode_config_types::{
-    AgentsConfig, AmbientConfig, AuthConfig, AutoJudgeConfig, AutoReviewConfig, CompactionConfig,
-    CompactionMode, CrossProviderFailoverMode, DiagramDisplayMode, DiagramPanePosition,
-    DiffDisplayMode, DisplayConfig, FeatureConfig, GatewayConfig, KeybindingsConfig,
-    MarkdownSpacingMode, MemoryConfig, NamedProviderAuth, NamedProviderConfig,
-    NamedProviderModelConfig, NamedProviderType, NativeScrollbarConfig, ProviderConfig,
-    SafetyConfig, SessionPickerResumeAction, UpdateChannel,
+    AgentsConfig, AmbientConfig, AuthConfig, AutoJudgeConfig, AutoReviewConfig, BatchConfig,
+    CompactionConfig, CompactionMode, CrossProviderFailoverMode, DiagramDisplayMode,
+    DiagramPanePosition, DiffDisplayMode, DisplayConfig, FeatureConfig, GatewayConfig,
+    KeybindingsConfig, MarkdownSpacingMode, MemoryConfig, NamedProviderAuth,
+    NamedProviderConfig, NamedProviderModelConfig, NamedProviderType, NativeScrollbarConfig,
+    ProviderConfig, SafetyConfig, SessionPickerResumeAction, SubagentConfig, UpdateChannel,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -76,6 +76,12 @@ pub struct Config {
 
     /// Auto-judge configuration
     pub autojudge: AutoJudgeConfig,
+
+    /// Batch tool configuration
+    pub batch: BatchConfig,
+
+    /// Subagent tool configuration
+    pub subagent: SubagentConfig,
 }
 
 /// External dictation / speech-to-text integration.

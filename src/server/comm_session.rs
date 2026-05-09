@@ -430,6 +430,7 @@ pub(super) async fn spawn_swarm_agent(
             let event_history2 = Arc::clone(event_history);
             let event_counter2 = Arc::clone(event_counter);
             let swarm_event_tx2 = swarm_event_tx.clone();
+            let sessions_for_alert = Arc::clone(sessions);
             tokio::spawn(async move {
                 update_member_status(
                     &sid_clone,
@@ -478,6 +479,7 @@ pub(super) async fn spawn_swarm_agent(
                     Some(&event_history2),
                     Some(&event_counter2),
                     Some(&swarm_event_tx2),
+                    Some(&sessions_for_alert),
                 )
                 .await;
             });

@@ -248,6 +248,41 @@ desktop_notifications = true
 # discord_channel_id = ""    # Channel ID to post in
 # discord_bot_user_id = ""   # Bot's user ID (for filtering own messages)
 # discord_reply_enabled = false  # Messages in channel become agent directives
+
+[batch]
+# Batch tool: maximum parallel tool calls in a single batch operation
+# Setting higher may increase API costs and memory usage
+# Env: JCODE_BATCH_MAX_PARALLEL
+max_parallel = 10
+
+[subagent]
+# Default execution mode for subagent tool
+# Env: JCODE_SUBAGENT_RUN_IN_BACKGROUND
+run_in_background = false
+
+# Output mode: "answer" | "compact" | "full_transcript"
+# "answer" = final answer only (lowest tokens, default)
+# "compact" = answer + human-readable transcript
+# "full_transcript" = answer + raw JSON messages (for debugging)
+# Env: JCODE_SUBAGENT_OUTPUT_MODE
+output_mode = "answer"
+
+# Default model for subagents (empty = use parent's model)
+# Env: JCODE_SUBAGENT_MODEL
+model = ""
+
+# Additional tools to block from subagents (comma-separated)
+# Always blocked: subagent, task, todo, todowrite, todoread
+# Env: JCODE_SUBAGENT_BLOCKED_TOOLS
+blocked_tools = []
+
+# Notification settings for background subagents
+# Env: JCODE_SUBAGENT_NOTIFY
+notify = true
+
+# Wake agent immediately when background subagent completes
+# Env: JCODE_SUBAGENT_WAKE
+wake = true
 "#;
 
         std::fs::write(&path, default_content)?;

@@ -295,6 +295,7 @@ async fn resolve_assignment_target_for_task(
 )]
 fn spawn_assigned_task_run(
     agent_arc: Arc<Mutex<Agent>>,
+    coordinator_session_id: String,
     target_session: String,
     swarm_id: String,
     task_id: String,
@@ -306,6 +307,7 @@ fn spawn_assigned_task_run(
     event_history: Arc<RwLock<std::collections::VecDeque<SwarmEvent>>>,
     event_counter: Arc<std::sync::atomic::AtomicU64>,
     swarm_event_tx: broadcast::Sender<SwarmEvent>,
+    sessions: SessionAgents,
 ) {
     let assignment_text = append_swarm_completion_report_instructions(&assignment_text);
     tokio::spawn(async move {
@@ -346,6 +348,15 @@ fn spawn_assigned_task_run(
             &swarms_by_id,
         )
         .await;
+        
+        // Set report_back_to so worker knows to report completion to coordinator
+        crate::server::swarm::set_member_report_back_to(
+            &target_session,
+            &coordinator_session_id,
+            &swarm_members,
+        )
+        .await;
+        
         update_member_status(
             &target_session,
             "running",
@@ -493,6 +504,7 @@ fn spawn_assigned_task_run(
                     Some(&event_history),
                     Some(&event_counter),
                     Some(&swarm_event_tx),
+                    Some(&sessions),
                 )
                 .await;
             }
@@ -1061,6 +1073,7 @@ pub(super) async fn handle_comm_assign_task(
             .any(|connection| connection.session_id == target_session)
     };
     if !target_has_client && let Some(agent_arc) = target_agent {
+        let coordinator_session_for_run = req_session_id.clone();
         let target_session_for_run = target_session.clone();
         let swarm_members_for_run = Arc::clone(swarm_members);
         let swarms_for_run = Arc::clone(swarms_by_id);
@@ -1071,9 +1084,11 @@ pub(super) async fn handle_comm_assign_task(
         let event_history_for_run = Arc::clone(event_history);
         let event_counter_for_run = Arc::clone(event_counter);
         let swarm_event_tx_for_run = swarm_event_tx.clone();
+        let sessions_for_run = Arc::clone(sessions);
         let assignment_text = combine_assignment_text(&content, message.as_deref());
         spawn_assigned_task_run(
             agent_arc,
+            coordinator_session_for_run,
             target_session_for_run,
             swarm_id_for_run,
             task_id_for_run,
@@ -1085,6 +1100,7 @@ pub(super) async fn handle_comm_assign_task(
             event_history_for_run,
             event_counter_for_run,
             swarm_event_tx_for_run,
+            sessions_for_run,
         );
     }
 
@@ -1506,6 +1522,7 @@ pub(super) async fn handle_comm_task_control(
             if agent_is_idle {
                 spawn_assigned_task_run(
                     agent_arc,
+                    req_session_id.clone(),
                     assignee.clone(),
                     swarm_id.clone(),
                     task_id.clone(),
@@ -1517,6 +1534,7 @@ pub(super) async fn handle_comm_task_control(
                     Arc::clone(event_history),
                     Arc::clone(event_counter),
                     swarm_event_tx.clone(),
+                    Arc::clone(sessions),
                 );
                 let summary = plan_graph_status_for(&swarm_id, swarm_plans).await;
                 let _ = client_event_tx.send(ServerEvent::CommTaskControlResponse {

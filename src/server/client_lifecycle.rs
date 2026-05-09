@@ -475,6 +475,7 @@ async fn handle_lightweight_control_request(
                 Some(event_history),
                 Some(event_counter),
                 Some(swarm_event_tx),
+                Some(&sessions),
             )
             .await;
             let _ = client_event_tx.send(ServerEvent::CommReportResponse {
@@ -1098,6 +1099,7 @@ pub(super) async fn handle_client(
                                     Some(&event_history),
                                     Some(&event_counter),
                                     Some(&swarm_event_tx),
+                                    Some(&sessions),
                                 )
                                 .await;
                             }
@@ -2311,6 +2313,7 @@ pub(super) async fn handle_client(
                     Some(&event_history),
                     Some(&event_counter),
                     Some(&swarm_event_tx),
+                    Some(&sessions),
                 )
                 .await;
                 let _ = client_event_tx.send(ServerEvent::CommReportResponse {

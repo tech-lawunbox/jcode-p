@@ -7,7 +7,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-const MAX_PARALLEL: usize = 10;
+const MAX_PARALLEL_DEFAULT: usize = 10;
+
+fn max_parallel() -> usize {
+    crate::config::config()
+        .batch
+        .max_parallel
+        .unwrap_or(MAX_PARALLEL_DEFAULT)
+}
 
 pub(crate) fn generic_batch_schema() -> Value {
     json!({
@@ -29,7 +36,7 @@ pub(crate) fn generic_batch_schema() -> Value {
                     "additionalProperties": true
                 },
                 "minItems": 1,
-                "maxItems": 10
+                "maxItems": max_parallel()
             }
         }
     })
@@ -168,10 +175,10 @@ impl Tool for BatchTool {
             return Err(anyhow::anyhow!("No tool calls provided"));
         }
 
-        if params.tool_calls.len() > MAX_PARALLEL {
+        if params.tool_calls.len() > max_parallel() {
             return Err(anyhow::anyhow!(
                 "Maximum {} parallel tool calls allowed",
-                MAX_PARALLEL
+                max_parallel()
             ));
         }
 
