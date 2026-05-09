@@ -121,6 +121,9 @@ pub fn detected_resume_terminal() -> Option<String> {
     if std::env::var("ALACRITTY_WINDOW_ID").is_ok() {
         return Some("alacritty".to_string());
     }
+    if std::env::var("TMUX").is_ok() {
+        return Some("tmux".to_string());
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -177,6 +180,7 @@ pub fn resume_terminal_candidates() -> Vec<String> {
     {
         for term in [
             "ghostty",
+            "tmux",
             "kitty",
             "wezterm",
             "alacritty",
@@ -193,6 +197,7 @@ pub fn resume_terminal_candidates() -> Vec<String> {
     {
         for term in [
             "handterm",
+            "tmux",
             "kitty",
             "wezterm",
             "alacritty",
@@ -302,6 +307,13 @@ fn build_spawn_command(term: &str, command: &TerminalCommand, cwd: &Path) -> Opt
         "gnome-terminal" => {
             cmd.arg("--title").arg(title);
             cmd.arg("--").arg(&command.program).args(&command.args);
+        }
+        "tmux" => {
+            let shell = shell_command(&command_parts(command));
+            cmd.args(["split-window", "-d", "-c"])
+                .arg(cwd.as_os_str())
+                .arg(&*command.program.to_string_lossy())
+                .args(&["-c", &shell, ";", "select-layout", "tiled"]);
         }
         "konsole" | "xterm" | "foot" => {
             cmd.args(["-e"]).arg(&command.program).args(&command.args);

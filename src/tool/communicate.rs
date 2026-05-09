@@ -1230,6 +1230,8 @@ struct CommunicateInput {
     validation: Option<String>,
     #[serde(default)]
     follow_up: Option<String>,
+    #[serde(default)]
+    auto_cleanup: Option<bool>,
 }
 
 impl CommunicateInput {
@@ -1291,6 +1293,10 @@ impl Tool for CommunicateTool {
                 "follow_up": {
                     "type": "string",
                     "description": "For action=report: blockers or follow-up work."
+                },
+                "auto_cleanup": {
+                    "type": "boolean",
+                    "description": "For action=await_members: if true and await completes successfully, automatically cleanup (stop) spawned workers. Defaults to false."
                 },
                 "to_session": {
                     "type": "string",
@@ -2249,10 +2255,12 @@ impl Tool for CommunicateTool {
             }
 
             "await_members" => {
-                let target_status = params
-                    .target_status
+                let auto_cleanup = params.auto_cleanup.unwrap_or(false);
+                let run_id = params.run_id.clone();
+                
+                let target_status = params.target_status.clone()
                     .unwrap_or_else(default_await_target_statuses);
-                let mut session_ids = params.session_ids.unwrap_or_default();
+                let mut session_ids = params.session_ids.clone().unwrap_or_default();
                 if let Some(target_session) = params.target_session.clone()
                     && !session_ids.iter().any(|id| id == &target_session)
                 {
@@ -2269,7 +2277,7 @@ impl Tool for CommunicateTool {
                     session_ids,
                     owned_only,
                     mode: params.mode.clone(),
-                    run_id: params.run_id.clone(),
+                    run_id: run_id.clone(),
                     timeout_secs: Some(timeout_secs),
                 };
 
@@ -2283,9 +2291,21 @@ impl Tool for CommunicateTool {
                         ..
                     }) => {
                         let reports = fetch_awaited_member_reports(&ctx, &members).await;
-                        Ok(format_awaited_members_with_reports(
+                        let output = format_awaited_members_with_reports(
                             completed, &summary, &members, &reports,
-                        ))
+                        );
+                        
+                        // Auto-cleanup workers after successful await if requested
+                        if completed && auto_cleanup {
+                            let cleanup_result = cleanup_swarm_workers_with_run_id(
+                                &ctx, &params, run_id.as_deref()
+                            ).await;
+                            if let Ok(cleanup_msg) = cleanup_result {
+                                return Ok(ToolOutput::new(format!("{}\n\n{}", output.output, cleanup_msg)));
+                            }
+                        }
+                        
+                        Ok(output)
                     }
                     Ok(response) => {
                         ensure_success(&response)?;
