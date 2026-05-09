@@ -1,5 +1,13 @@
 # Swarm Protocol — Multi-Agent Coordination
 
+## ⚠️ CRITICAL RULES
+
+1. **Spawned agents CANNOT use swarm commands** — They do their task and report back, nothing else
+2. **Only YOU (coordinator) call swarm actions** — spawn, assign_task, cleanup, etc.
+3. **Call `propose_plan` BEFORE spawning** — initializes swarm context
+
+---
+
 ## Core Concept
 
 You are a **coordinator** in a swarm. Spawn subagents to execute tasks in parallel, then synthesize their results. You manage, assign tasks, and report completion.
@@ -10,8 +18,8 @@ You are a **coordinator** in a swarm. Spawn subagents to execute tasks in parall
 
 | Role | Description |
 |------|-------------|
-| **coordinator** | You. Orchestrates the swarm, assigns tasks, synthesizes results. |
-| **agent** | Spawned subagent. Does the work, reports back to coordinator. |
+| **coordinator** | You. Orchestrates the swarm, assigns tasks, synthesizes results. You call ALL swarm actions. |
+| **agent** | Spawned subagent. Does the work, reports back to coordinator. **CANNOT call swarm commands.** |
 | **worktree_manager** | Manages parallel worktree operations (if needed). |
 
 ---
@@ -41,7 +49,7 @@ Use `action: "spawn"` with `prompt` that includes the specific task:
 ```json
 {
   "action": "spawn",
-  "prompt": "You are an agent. Task: [detailed task description]. Report completion back to coordinator.",
+  "prompt": "You are a task agent. Complete the task below, then report completion.\n\nTask: [detailed description]\n\nIMPORTANT: Do NOT use swarm, subagent, or spawn commands. Just complete the task and report.",
   "spawn_if_needed": true
 }
 ```
@@ -49,6 +57,7 @@ Use `action: "spawn"` with `prompt` that includes the specific task:
 **Spawned agents automatically:**
 - Receive their task in the prompt
 - Know they should report completion back to you (the coordinator)
+- **MUST NOT** call any swarm commands
 
 ---
 
@@ -100,7 +109,13 @@ When an agent completes its task, it sends a report to you. Your job as coordina
 → When assigning work, always include `task_id` in your action parameters.
 
 ### "Only the coordinator can control assigned tasks"
-→ You are the coordinator. This error means you're trying to control an agent that wasn't spawned by you, or the session isn't recognized as a swarm coordinator. Ensure you're using `spawn` from your session.
+→ You (the main session) are the coordinator. Spawned agents CANNOT control other agents. This error means:
+   - A spawned agent tried to use swarm commands → Don't do this
+   - You're not recognized as the coordinator → Ensure you're calling from the session that spawned
+→ **Rule:** Only call swarm actions from YOUR session, not from spawned agents.
+
+### "Not in a swarm"
+→ Your session isn't part of any swarm. Use `propose_plan` first to initialize swarm context.
 
 ### "Session not found"
 → The target session may have ended. Check status before trying to control it.
