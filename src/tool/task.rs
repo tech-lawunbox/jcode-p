@@ -254,7 +254,7 @@ impl Tool for SubagentTool {
                     &ctx.session_id,
                     bg_notify,
                     bg_wake,
-                    move |_output_path| async move {
+                    move |output_path| async move {
                         // Re-load session from disk (it was saved earlier)
                         let session = Session::load(&session_id)
                             .map_err(|e| anyhow::anyhow!("Failed to load session: {}", e))?;
@@ -285,14 +285,16 @@ impl Tool for SubagentTool {
                             None
                         };
 
-                        // Format output for return value
-                        let _output = format_subagent_output(
+                        // Format and write output to output_path so bg tool can retrieve it
+                        let output = format_subagent_output(
                             &final_text,
                             &sub_session_id,
                             output_mode,
                             history.as_deref(),
                             None,
                         );
+                        tokio::fs::write(&output_path, &output).await
+                            .map_err(|e| anyhow::anyhow!("Failed to write output: {}", e))?;
 
                         Ok(TaskResult::completed(None))
                     },
