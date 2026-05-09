@@ -267,6 +267,7 @@ pub(super) async fn spawn_swarm_agent(
     working_dir: Option<String>,
     initial_message: Option<String>,
     run_id: Option<String>,
+    explicit_swarm_id: Option<String>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
     provider_template: &Arc<dyn Provider>,
@@ -324,10 +325,11 @@ pub(super) async fn spawn_swarm_agent(
     let (new_session_id, is_headless_fallback) = match visible_spawn {
         Ok((new_session_id, true)) => Ok((new_session_id, false)),
         Ok((_, false)) | Err(_) => {
-            let cmd = if let Some(ref dir) = resolved_working_dir {
-                format!("create_session:{dir}")
-            } else {
-                "create_session".to_string()
+            let cmd = match (&resolved_working_dir, &explicit_swarm_id) {
+                (Some(dir), Some(sid)) => format!("create_session:{dir}|{sid}"),
+                (Some(dir), None) => format!("create_session:{dir}"),
+                (None, Some(sid)) => format!("create_session|{sid}"),
+                (None, None) => "create_session".to_string(),
             };
             create_headless_session(
                 sessions,
@@ -497,6 +499,7 @@ pub(super) async fn handle_comm_spawn(
     initial_message: Option<String>,
     request_nonce: Option<String>,
     run_id: Option<String>,
+    swarm_id: Option<String>,
     client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
@@ -557,6 +560,7 @@ pub(super) async fn handle_comm_spawn(
         working_dir,
         initial_message,
         run_id,
+        Some(swarm_id.clone()),
         sessions,
         global_session_id,
         provider_template,

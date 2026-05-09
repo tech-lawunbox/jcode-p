@@ -503,6 +503,7 @@ async fn spawn_assignment_session(
         initial_message: None,
         request_nonce: Some(spawn_request_nonce(ctx, params.operation_id.as_deref())),
         run_id,
+        swarm_id: ctx.swarm_id.clone(),
     };
 
     match send_spawn_request_with_coordinator_retry(
@@ -1737,6 +1738,7 @@ impl Tool for CommunicateTool {
                         .run_id
                         .clone()
                         .or_else(|| Some(fresh_swarm_run_id(&ctx))),
+                    swarm_id: ctx.swarm_id.clone(),
                 };
 
                 match send_spawn_request_with_coordinator_retry(&ctx, request, "spawn agent").await

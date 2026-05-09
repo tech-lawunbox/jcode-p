@@ -349,12 +349,13 @@ pub(super) fn handle_run_subagent(
             name: tool_name.clone(),
         });
 
-        let (registry, session_id, working_dir) = {
+        let (registry, session_id, working_dir, swarm_id) = {
             let agent_guard = agent.lock().await;
             (
                 agent_guard.registry(),
                 agent_guard.session_id().to_string(),
                 agent_guard.working_dir().map(std::path::PathBuf::from),
+                agent_guard.swarm_id().map(|s| s.to_string()),
             )
         };
 
@@ -366,6 +367,7 @@ pub(super) fn handle_run_subagent(
             stdin_request_tx: None,
             graceful_shutdown_signal: None,
             execution_mode: crate::tool::ToolExecutionMode::Direct,
+            swarm_id,
         };
 
         let started = Instant::now();

@@ -809,6 +809,7 @@ impl App {
                                             stdin_request_tx: None,
                                             graceful_shutdown_signal: None,
                                             execution_mode: crate::tool::ToolExecutionMode::AgentTurn,
+                                            swarm_id: self.session.swarm_id.clone(),
                                         };
                                         let tool_result = self.registry.execute(&tool_name, input, ctx).await;
                                         crate::telemetry::record_tool_call();
@@ -1066,6 +1067,7 @@ impl App {
                     stdin_request_tx: None,
                     graceful_shutdown_signal: None,
                     execution_mode: crate::tool::ToolExecutionMode::AgentTurn,
+                    swarm_id: self.session.swarm_id.clone(),
                 };
 
                 Bus::global().publish(BusEvent::ToolUpdated(ToolEvent {

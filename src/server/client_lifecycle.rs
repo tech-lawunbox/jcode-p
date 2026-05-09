@@ -338,6 +338,7 @@ async fn handle_lightweight_control_request(
             initial_message,
             request_nonce,
             run_id,
+            swarm_id,
         } => {
             handle_comm_spawn(
                 id,
@@ -346,6 +347,7 @@ async fn handle_lightweight_control_request(
                 initial_message,
                 request_nonce,
                 run_id,
+                swarm_id,
                 &client_event_tx,
                 sessions,
                 global_session_id,
@@ -2171,6 +2173,7 @@ pub(super) async fn handle_client(
                 initial_message,
                 request_nonce,
                 run_id,
+                swarm_id,
             } => {
                 handle_comm_spawn(
                     id,
@@ -2179,6 +2182,7 @@ pub(super) async fn handle_client(
                     initial_message,
                     request_nonce,
                     run_id,
+                    swarm_id,
                     &client_event_tx,
                     &sessions,
                     &global_session_id,

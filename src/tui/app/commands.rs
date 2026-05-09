@@ -621,6 +621,7 @@ fn launch_manual_subagent(app: &mut App, spec: ManualSubagentSpec) {
     let registry = app.registry.clone();
     let session_id = app.session.id.clone();
     let working_dir = app.session.working_dir.clone();
+    let swarm_id = app.session.swarm_id.clone();
     let tool_call_for_task = tool_call.clone();
     tokio::spawn(async move {
         Bus::global().publish(BusEvent::ToolUpdated(ToolEvent {
@@ -640,6 +641,7 @@ fn launch_manual_subagent(app: &mut App, spec: ManualSubagentSpec) {
             stdin_request_tx: None,
             graceful_shutdown_signal: None,
             execution_mode: crate::tool::ToolExecutionMode::Direct,
+            swarm_id,
         };
 
         let start = Instant::now();

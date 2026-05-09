@@ -3820,6 +3820,7 @@ async fn run_smoke(args: SmokeArgs) -> Result<()> {
         stdin_request_tx: None,
         graceful_shutdown_signal: None,
         execution_mode: ToolExecutionMode::Direct,
+        swarm_id: None,
     };
 
     let mut cases = vec![

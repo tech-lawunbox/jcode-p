@@ -309,11 +309,12 @@ fn build_spawn_command(term: &str, command: &TerminalCommand, cwd: &Path) -> Opt
             cmd.arg("--").arg(&command.program).args(&command.args);
         }
         "tmux" => {
+            // tmux split-window [-d] [-c pane-create-path] [shell-command]
+            // The command should be: tmux split-window -d -c <cwd> -- <program> <args...>
             let shell = shell_command(&command_parts(command));
             cmd.args(["split-window", "-d", "-c"])
                 .arg(cwd.as_os_str())
-                .arg(&*command.program.to_string_lossy())
-                .args(&["-c", &shell, ";", "select-layout", "tiled"]);
+                .args(["--", "bash", "-c", &shell]);
         }
         "konsole" | "xterm" | "foot" => {
             cmd.args(["-e"]).arg(&command.program).args(&command.args);
