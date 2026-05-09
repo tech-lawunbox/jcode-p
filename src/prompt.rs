@@ -7,6 +7,7 @@ use std::process::Command;
 pub const DEFAULT_SYSTEM_PROMPT: &str = include_str!("prompt/system_prompt.md");
 const SELFDEV_HINT_PROMPT: &str = include_str!("prompt/selfdev_hint.txt");
 const SELFDEV_MODE_PROMPT: &str = include_str!("prompt/selfdev_mode.txt");
+const SWARM_GUIDANCE_PROMPT: &str = include_str!("prompt/swarm_prompt.md");
 
 /// Split system prompt for efficient caching
 /// Static content is cached, dynamic content is not
@@ -318,6 +319,9 @@ pub fn build_system_prompt_split(
         info.skills_chars = skills_section.len();
         static_parts.push(skills_section);
     }
+
+    // Add swarm coordination guidance
+    static_parts.push(SWARM_GUIDANCE_PROMPT.to_string());
 
     // === TURN CONTEXT (not cached) ===
 
