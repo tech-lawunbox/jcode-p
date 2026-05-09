@@ -25,7 +25,7 @@ struct SkillInput {
     #[serde(default = "default_action")]
     action: String,
     /// Skill name (required for load, reload, read)
-    #[serde(default)]
+    #[serde(default, alias = "skill")]
     name: Option<String>,
 }
 
@@ -137,6 +137,7 @@ impl SkillTool {
         for skill in skills {
             output.push_str(&format!("## /{}\n", skill.name));
             output.push_str(&format!("  {}\n", skill.description));
+            output.push_str(&format!("  Origin: {}\n", skill.origin.label()));
             output.push_str(&format!("  Path: {}\n", skill.path.display()));
             if let Some(ref tools) = skill.allowed_tools {
                 output.push_str(&format!("  Tools: {}\n", tools.join(", ")));
@@ -195,7 +196,12 @@ impl SkillTool {
                 let mut output = format!("Reloaded {} skills\n\n", count);
 
                 for skill in skills {
-                    output.push_str(&format!("- /{}: {}\n", skill.name, skill.description));
+                    output.push_str(&format!(
+                        "- /{} [{}]: {}\n",
+                        skill.name,
+                        skill.origin.label(),
+                        skill.description
+                    ));
                 }
 
                 Ok(ToolOutput::new(output).with_title(format!("Skills: Reloaded {}", count)))
@@ -219,6 +225,7 @@ impl SkillTool {
         if let Some(skill) = registry.get(&name) {
             let mut output = format!("# Skill: {}\n\n", skill.name);
             output.push_str(&format!("**Description:** {}\n", skill.description));
+            output.push_str(&format!("**Origin:** {}\n", skill.origin.label()));
             output.push_str(&format!("**Path:** {}\n", skill.path.display()));
             if let Some(ref tools) = skill.allowed_tools {
                 output.push_str(&format!("**Allowed tools:** {}\n", tools.join(", ")));
@@ -298,6 +305,21 @@ mod tests {
         let result = tool.execute(input, ctx).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("name"));
+    }
+
+    #[tokio::test]
+    async fn test_load_accepts_anthropic_skill_alias() {
+        let tool = create_test_tool();
+        let ctx = create_test_context();
+        let input = json!({"skill": "nonexistent", "args": "ignored by loader"});
+
+        let result = tool.execute(input, ctx).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Skill 'nonexistent' not found"),
+            "expected alias to be used as skill name, got: {err}"
+        );
     }
 
     #[tokio::test]

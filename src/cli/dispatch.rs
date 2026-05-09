@@ -5,8 +5,9 @@ use std::process::{Command as ProcessCommand, Stdio};
 use std::time::Instant;
 
 use super::args::{
-    AmbientCommand, Args, AuthCommand, Command, MemoryCommand, ModelCommand, ProviderCommand,
-    RestartCommand, SessionCommand, TranscriptModeArg,
+    AmbientCommand, Args, AuthCommand, CleanCodeCommand, CleanCodeFailOnArg, Command, EventCommand,
+    MemoryCommand, MemoryWikiCommand, ModelCommand, ProviderCommand, RestartCommand,
+    SessionCommand, SkillCommand, SkillScopeCommand, TranscriptModeArg,
 };
 use crate::{
     agent, auth, build, provider, provider_catalog, server, session, setup_hints, startup_profile,
@@ -201,6 +202,99 @@ pub(crate) async fn run_main(mut args: Args) -> Result<()> {
         Some(Command::Memory(subcmd)) => {
             commands::run_memory_command(map_memory_subcommand(subcmd))?;
         }
+        Some(Command::Skills(subcmd)) => match subcmd {
+            SkillCommand::List { json } => commands::run_skills_list_command(json)?,
+            SkillCommand::Show { name, json } => commands::run_skills_show_command(&name, json)?,
+            SkillCommand::Sync { force } => commands::run_skills_sync_command(force)?,
+            SkillCommand::Doctor { json } => commands::run_skills_doctor_command(json)?,
+            SkillCommand::Scope { command } => match command {
+                SkillScopeCommand::Init { cwd, force, json } => {
+                    commands::run_skills_scope_init_command(cwd, force, json)?
+                }
+                SkillScopeCommand::List { cwd, json } => {
+                    commands::run_skills_scope_list_command(cwd, json)?
+                }
+                SkillScopeCommand::Set {
+                    name,
+                    state,
+                    reason,
+                    cwd,
+                    json,
+                } => {
+                    commands::run_skills_scope_set_command(cwd, &name, state.into(), reason, json)?
+                }
+            },
+            SkillCommand::Import {
+                cwd,
+                from,
+                scope,
+                dry_run: _,
+                apply,
+                force,
+                json,
+            } => commands::run_skills_import_command(commands::SkillsImportCommandOptions {
+                cwd,
+                sources: from,
+                scope: scope.into(),
+                apply,
+                force,
+                json,
+            })?,
+            SkillCommand::Validate { cwd, json } => {
+                commands::run_skills_validate_command(cwd, json)?
+            }
+            SkillCommand::Match {
+                goal,
+                cwd,
+                skills,
+                skill,
+                json,
+            } => commands::run_skills_match_command(&goal, cwd, skills.into(), &skill, json)?,
+            SkillCommand::LlmwikiBridge { json } => commands::run_llmwiki_bridge_command(json)?,
+        },
+        Some(Command::Events(subcmd)) => match subcmd {
+            EventCommand::List { json } => commands::run_events_list_command(json)?,
+            EventCommand::Show { run, json } => commands::run_events_show_command(&run, json)?,
+            EventCommand::Replay { run, json, output } => {
+                commands::run_events_replay_command(&run, json, output)?
+            }
+            EventCommand::Path { run, json } => commands::run_events_path_command(&run, json)?,
+            EventCommand::Tail { run, lines, ndjson } => {
+                commands::run_events_tail_command(&run, lines, ndjson)?
+            }
+            EventCommand::Export { run, output, json } => {
+                commands::run_events_export_command(&run, output, json)?
+            }
+            EventCommand::Sse {
+                run,
+                last_event_id,
+                retry_ms,
+                output,
+            } => {
+                commands::run_events_sse_command(&run, last_event_id.as_deref(), retry_ms, output)?
+            }
+            EventCommand::Prune {
+                keep_logs,
+                max_total_bytes,
+                apply,
+                json,
+            } => commands::run_events_prune_command(keep_logs, max_total_bytes, apply, json)?,
+            EventCommand::Bench { events, json } => {
+                commands::run_events_bench_command(events, json)?
+            }
+        },
+        Some(Command::CleanCode(subcmd)) => match subcmd {
+            CleanCodeCommand::Check {
+                paths,
+                json,
+                fail_on,
+            } => commands::run_clean_code_check_command(
+                paths,
+                json,
+                map_clean_code_fail_on(fail_on),
+            )?,
+            CleanCodeCommand::Rules => commands::run_clean_code_rules_command()?,
+        },
         Some(Command::Session(subcmd)) => match subcmd {
             SessionCommand::Rename {
                 session,
@@ -370,6 +464,13 @@ fn map_memory_subcommand(subcmd: MemoryCommand) -> commands::MemorySubcommand {
         },
         MemoryCommand::Stats => commands::MemorySubcommand::Stats,
         MemoryCommand::ClearTest => commands::MemorySubcommand::ClearTest,
+        MemoryCommand::Wiki(subcmd) => commands::MemorySubcommand::Wiki(match subcmd {
+            MemoryWikiCommand::Init => commands::MemoryWikiSubcommand::Init,
+            MemoryWikiCommand::Status => commands::MemoryWikiSubcommand::Status,
+            MemoryWikiCommand::Doctor => commands::MemoryWikiSubcommand::Doctor,
+            MemoryWikiCommand::Search { query } => commands::MemoryWikiSubcommand::Search { query },
+            MemoryWikiCommand::Schema { full } => commands::MemoryWikiSubcommand::Schema { full },
+        }),
     }
 }
 
@@ -380,6 +481,14 @@ fn map_ambient_subcommand(subcmd: AmbientCommand) -> commands::AmbientSubcommand
         AmbientCommand::Trigger => commands::AmbientSubcommand::Trigger,
         AmbientCommand::Stop => commands::AmbientSubcommand::Stop,
         AmbientCommand::RunVisible => commands::AmbientSubcommand::RunVisible,
+    }
+}
+
+fn map_clean_code_fail_on(value: CleanCodeFailOnArg) -> crate::clean_code::Severity {
+    match value {
+        CleanCodeFailOnArg::Info => crate::clean_code::Severity::Info,
+        CleanCodeFailOnArg::Warning => crate::clean_code::Severity::Warning,
+        CleanCodeFailOnArg::Error => crate::clean_code::Severity::Error,
     }
 }
 
@@ -563,6 +672,15 @@ pub(crate) async fn wait_for_reloading_server() -> bool {
                 "Reload handoff failed while waiting for server on {}: {}; recent_state={}",
                 server::socket_path().display(),
                 detail.unwrap_or_else(|| "unknown reload failure".to_string()),
+                server::reload_state_summary(std::time::Duration::from_secs(60))
+            ));
+            false
+        }
+        server::ReloadWaitStatus::TimedOut(detail) => {
+            crate::logging::warn(&format!(
+                "Reload handoff timed out while waiting for server on {}: {}; recent_state={}",
+                server::socket_path().display(),
+                detail,
                 server::reload_state_summary(std::time::Duration::from_secs(60))
             ));
             false

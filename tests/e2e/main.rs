@@ -9,6 +9,8 @@ mod test_support;
 mod ambient;
 mod binary_integration;
 mod burst_spawn;
+mod harness_cli;
+mod harness_live_provider;
 mod provider_behavior;
 mod safety;
 mod session_flow;

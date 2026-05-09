@@ -57,11 +57,28 @@ fn runtime_user_discriminator() -> String {
 }
 
 fn ensure_private_runtime_dir(path: &Path) {
-    let _ = std::fs::create_dir_all(path);
+    if let Err(err) = std::fs::create_dir_all(path) {
+        eprintln!(
+            "warning: failed to create private runtime dir {}: {}",
+            path.display(),
+            err
+        );
+        return;
+    }
     #[cfg(unix)]
     {
-        let _ = jcode_core::fs::set_directory_permissions_owner_only(path);
+        if let Err(err) = jcode_core::fs::set_directory_permissions_owner_only(path) {
+            eprintln!(
+                "warning: failed to harden private runtime dir {}: {}",
+                path.display(),
+                err
+            );
+        }
     }
+}
+
+fn warn_storage_best_effort(context: &str, _path: &Path, err: impl std::fmt::Display) {
+    eprintln!("warning: storage best-effort step failed: {context} [redacted path]: {err}",);
 }
 
 pub fn jcode_dir() -> Result<PathBuf> {
@@ -122,15 +139,19 @@ pub fn user_home_path(relative: impl AsRef<Path>) -> Result<PathBuf> {
 pub fn harden_user_config_permissions() {
     if let Some(config_dir) = dirs::config_dir() {
         let jcode_config_dir = config_dir.join("jcode");
-        if jcode_config_dir.exists() {
-            let _ = jcode_core::fs::set_directory_permissions_owner_only(&jcode_config_dir);
+        if jcode_config_dir.exists()
+            && let Err(err) =
+                jcode_core::fs::set_directory_permissions_owner_only(&jcode_config_dir)
+        {
+            warn_storage_best_effort("harden config dir", &jcode_config_dir, err);
         }
     }
 
     if let Ok(jcode_home) = jcode_dir()
         && jcode_home.exists()
+        && let Err(err) = jcode_core::fs::set_directory_permissions_owner_only(&jcode_home)
     {
-        let _ = jcode_core::fs::set_directory_permissions_owner_only(&jcode_home);
+        warn_storage_best_effort("harden jcode home", &jcode_home, err);
     }
 }
 
@@ -139,11 +160,15 @@ pub fn harden_user_config_permissions() {
 /// This is used before reading credential files so legacy permissive modes can
 /// be tightened opportunistically.
 pub fn harden_secret_file_permissions(path: &Path) {
-    if let Some(parent) = path.parent() {
-        let _ = jcode_core::fs::set_directory_permissions_owner_only(parent);
+    if let Some(parent) = path.parent()
+        && let Err(err) = jcode_core::fs::set_directory_permissions_owner_only(parent)
+    {
+        warn_storage_best_effort("harden secret parent", parent, err);
     }
-    if path.exists() {
-        let _ = jcode_core::fs::set_permissions_owner_only(path);
+    if path.exists()
+        && let Err(err) = jcode_core::fs::set_permissions_owner_only(path)
+    {
+        warn_storage_best_effort("harden secret file", path, err);
     }
 }
 
@@ -199,7 +224,11 @@ pub fn write_text_secret(path: &Path, content: &str) -> Result<()> {
 }
 
 pub fn upsert_env_file_value(path: &Path, env_key: &str, value: Option<&str>) -> Result<()> {
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let existing = match std::fs::read_to_string(path) {
+        Ok(existing) => existing,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err.into()),
+    };
     let prefix = format!("{}=", env_key);
 
     let mut lines = Vec::new();
@@ -274,7 +303,12 @@ fn write_bytes_inner(path: &Path, bytes: &[u8], durable: bool) -> Result<()> {
 
         if path.exists() {
             let bak_path = path.with_extension("bak");
-            let _ = std::fs::rename(path, &bak_path);
+            match std::fs::remove_file(&bak_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err.into()),
+            }
+            std::fs::rename(path, &bak_path)?;
         }
 
         std::fs::rename(&tmp_path, path)?;
@@ -283,15 +317,19 @@ fn write_bytes_inner(path: &Path, bytes: &[u8], durable: bool) -> Result<()> {
         if durable
             && let Some(parent) = path.parent()
             && let Ok(dir) = std::fs::File::open(parent)
+            && let Err(err) = dir.sync_all()
         {
-            let _ = dir.sync_all();
+            warn_storage_best_effort("sync parent dir", parent, err);
         }
 
         Ok(())
     })();
 
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp_path);
+    if result.is_err()
+        && let Err(err) = std::fs::remove_file(&tmp_path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        warn_storage_best_effort("remove temporary file", &tmp_path, err);
     }
 
     result
@@ -309,15 +347,11 @@ pub enum StorageRecoveryEvent<'a> {
 
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     read_json_with_recovery_handler(path, |event| match event {
-        StorageRecoveryEvent::CorruptPrimary { path, error } => {
-            eprintln!(
-                "Corrupt JSON at {}, trying backup: {}",
-                path.display(),
-                error
-            );
+        StorageRecoveryEvent::CorruptPrimary { path: _, error } => {
+            eprintln!("Corrupt JSON at [redacted path], trying backup: {}", error);
         }
-        StorageRecoveryEvent::RecoveredFromBackup { backup_path } => {
-            eprintln!("Recovered from backup: {}", backup_path.display());
+        StorageRecoveryEvent::RecoveredFromBackup { backup_path: _ } => {
+            eprintln!("Recovered from backup: [redacted path]");
         }
     })
 }
@@ -340,7 +374,7 @@ where
                         on_recovery(StorageRecoveryEvent::RecoveredFromBackup {
                             backup_path: &bak_path,
                         });
-                        let _ = std::fs::copy(&bak_path, path);
+                        std::fs::copy(&bak_path, path)?;
                         Ok(val)
                     }
                     Err(bak_err) => Err(anyhow::anyhow!(
@@ -372,4 +406,32 @@ pub fn append_json_line_fast<T: Serialize + ?Sized>(path: &Path, value: &T) -> R
     file.write_all(b"\n")?;
     file.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Serialize;
+
+    use super::*;
+
+    #[derive(Serialize)]
+    struct TestDoc<'a> {
+        value: &'a str,
+    }
+
+    #[test]
+    fn repeated_writes_replace_existing_backup() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("state.json");
+
+        write_json(&path, &TestDoc { value: "one" }).expect("first write");
+        write_json(&path, &TestDoc { value: "two" }).expect("second write");
+        write_json(&path, &TestDoc { value: "three" }).expect("third write");
+
+        let primary = std::fs::read_to_string(&path).expect("primary");
+        let backup = std::fs::read_to_string(path.with_extension("bak")).expect("backup");
+
+        assert!(primary.contains("three"));
+        assert!(backup.contains("two"));
+    }
 }

@@ -1,8 +1,10 @@
 use super::{
     CommunicateInput, CommunicateTool, cleanup_candidate_session_ids,
     default_await_target_statuses, default_cleanup_target_statuses, format_awaited_members,
-    format_awaited_members_with_reports, format_members, format_plan_status,
-    latest_assistant_report, resolve_optional_target_session,
+    format_awaited_members_with_reports, format_cleanup_dry_run, format_members,
+    format_members_for_run, format_plan_status, format_swarm_health, format_swarm_health_for_run,
+    format_swarm_reconcile, latest_assistant_report, resolve_optional_target_session,
+    spawn_requires_coordinator, spawn_self_promote_failure_message,
 };
 use crate::message::{Message, StreamEvent, ToolDefinition};
 use crate::protocol::{
@@ -124,6 +126,31 @@ fn resolve_optional_target_session_defaults_to_current() {
 }
 
 #[test]
+fn spawn_requires_coordinator_detects_spawn_denials_only() {
+    let denial = ServerEvent::Error {
+        id: 1,
+        message: "Only the coordinator can spawn new agents. Assign the current session as coordinator first.".to_string(),
+        retry_after_secs: None,
+    };
+    assert!(spawn_requires_coordinator(&denial));
+
+    let unrelated = ServerEvent::Error {
+        id: 2,
+        message: "Only the coordinator can assign tasks.".to_string(),
+        retry_after_secs: None,
+    };
+    assert!(!spawn_requires_coordinator(&unrelated));
+}
+
+#[test]
+fn spawn_self_promote_failure_message_includes_actionable_retry() {
+    let message = spawn_self_promote_failure_message("Only the coordinator can assign roles.");
+    assert!(message.contains("automatic self-promotion failed"));
+    assert!(message.contains("swarm assign_role target_session=current role=coordinator"));
+    assert!(message.contains("retry spawn"));
+}
+
+#[test]
 fn schema_still_requires_action() {
     let schema = CommunicateTool::new().parameters_schema();
     assert_eq!(schema["required"], json!(["action"]));
@@ -168,7 +195,10 @@ fn schema_advertises_supported_swarm_fields() {
     assert!(props.contains_key("plan_items"));
     assert!(props.contains_key("initial_message"));
     assert!(props.contains_key("force"));
+    assert!(props.contains_key("dry_run"));
     assert!(props.contains_key("retain_agents"));
+    assert!(props.contains_key("run_id"));
+    assert!(props.contains_key("operation_id"));
     assert!(props.contains_key("status"));
     assert!(props.contains_key("validation"));
     assert!(props.contains_key("follow_up"));
@@ -185,6 +215,18 @@ fn schema_advertises_supported_swarm_fields() {
             .as_array()
             .expect("action enum")
             .contains(&json!("status"))
+    );
+    assert!(
+        schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum")
+            .contains(&json!("health"))
+    );
+    assert!(
+        schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum")
+            .contains(&json!("reconcile"))
     );
     assert!(
         schema["properties"]["action"]["enum"]

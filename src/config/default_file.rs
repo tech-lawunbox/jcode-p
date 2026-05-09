@@ -148,6 +148,12 @@ message_timestamps = true
 # Set to "main" for bleeding edge updates every time code is pushed
 update_channel = "stable"
 
+[memory]
+# Memory backend: legacy, wiki, hybrid, or off. Default stays legacy for compatibility.
+backend = "legacy"
+# LLM Wiki storage scope: global-cache (default) or repo-local (opt-in per repo).
+wiki_scope = "global-cache"
+
 [provider]
 # Default model (optional, uses provider default if not set)
 # Set via /model picker with Ctrl+D to save as default
@@ -155,8 +161,8 @@ update_channel = "stable"
 # Default provider (optional: claude|openai|copilot|openrouter)
 # When set, this provider is preferred on startup if available
 # default_provider = "copilot"
-# OpenAI reasoning effort (none|low|medium|high|xhigh)
-openai_reasoning_effort = "low"
+# OpenAI reasoning effort (none|low|medium|high|xhigh|max). Default uses maximum reasoning.
+openai_reasoning_effort = "xhigh"
 # OpenAI transport mode (auto|websocket|https)
 # openai_transport = "auto"
 # OpenAI service tier override (priority|flex)

@@ -314,6 +314,7 @@ async fn ensure_client_swarm_member(
                     detail: None,
                     friendly_name: member_name.clone(),
                     report_back_to_session_id: None,
+                    run_id: None,
                     latest_completion_report: None,
                     role: "agent".to_string(),
                     joined_at: now,
@@ -563,9 +564,9 @@ async fn subscribe_should_mark_ready(
     swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
 ) -> bool {
     let members = swarm_members.read().await;
-    !members
+    members
         .get(client_session_id)
-        .is_some_and(|member| member.status == "running")
+        .is_none_or(|member| member.status != "running")
 }
 
 pub(super) async fn handle_reload(

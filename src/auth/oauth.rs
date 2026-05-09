@@ -27,6 +27,9 @@ pub mod claude {
 }
 
 const CLAUDE_TOKEN_TIMEOUT_SECS: u64 = 15;
+const QR_BROWSERLESS_HEADING: &str =
+    "Scan this QR on another device if this machine has no browser:";
+const QR_CLAUDE_CALLBACK_HEADING: &str = "Scan this QR on another device, finish login there, then paste the full callback URL back here:";
 
 /// OpenAI Codex OAuth configuration
 pub mod openai {
@@ -60,7 +63,7 @@ pub struct OAuthTokens {
 
 fn parse_oauth_scopes(scope: Option<&str>) -> Vec<String> {
     scope
-        .unwrap_or_default()
+        .unwrap_or("")
         .split_whitespace()
         .filter(|scope| !scope.trim().is_empty())
         .map(ToOwned::to_owned)
@@ -139,6 +142,22 @@ fn bad_request_response(message: &str) -> String {
         body.len(),
         body
     )
+}
+
+fn write_oauth_response_best_effort<W: Write>(writer: &mut W, response: String) {
+    if let Err(err) = writer.write_all(response.as_bytes()) {
+        eprintln!("warning: failed to write OAuth callback response: {err}");
+    }
+}
+
+async fn write_oauth_response_async_best_effort<W>(writer: &mut W, response: String)
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::AsyncWriteExt;
+    if let Err(err) = writer.write_all(response.as_bytes()).await {
+        eprintln!("warning: failed to write OAuth callback response: {err}");
+    }
 }
 
 fn is_socket_read_timeout(err: &std::io::Error) -> bool {
@@ -232,7 +251,10 @@ pub fn wait_for_callback(port: u16, expected_state: &str) -> Result<String> {
 
         let parts: Vec<&str> = request_line.split_whitespace().collect();
         if parts.len() < 2 {
-            let _ = stream.write_all(bad_request_response("Invalid HTTP request.").as_bytes());
+            write_oauth_response_best_effort(
+                &mut stream,
+                bad_request_response("Invalid HTTP request."),
+            );
             continue;
         }
 
@@ -240,8 +262,9 @@ pub fn wait_for_callback(port: u16, expected_state: &str) -> Result<String> {
         let url = match url::Url::parse(&format!("http://localhost{}", path)) {
             Ok(url) => url,
             Err(_) => {
-                let _ = stream.write_all(
-                    bad_request_response("Could not parse OAuth callback URL.").as_bytes(),
+                write_oauth_response_best_effort(
+                    &mut stream,
+                    bad_request_response("Could not parse OAuth callback URL."),
                 );
                 continue;
             }
@@ -252,8 +275,9 @@ pub fn wait_for_callback(port: u16, expected_state: &str) -> Result<String> {
             .find(|(k, _)| k == "error")
             .map(|(_, v)| v.to_string())
         {
-            let _ = stream.write_all(
-                bad_request_response("Authentication was denied or cancelled.").as_bytes(),
+            write_oauth_response_best_effort(
+                &mut stream,
+                bad_request_response("Authentication was denied or cancelled."),
             );
             anyhow::bail!("OAuth provider returned error: {}", error);
         }
@@ -265,9 +289,9 @@ pub fn wait_for_callback(port: u16, expected_state: &str) -> Result<String> {
         {
             Some(code) => code,
             None => {
-                let _ = stream.write_all(
-                    bad_request_response("No authorization code was included in this request.")
-                        .as_bytes(),
+                write_oauth_response_best_effort(
+                    &mut stream,
+                    bad_request_response("No authorization code was included in this request."),
                 );
                 continue;
             }
@@ -280,17 +304,18 @@ pub fn wait_for_callback(port: u16, expected_state: &str) -> Result<String> {
         {
             Some(state) => state,
             None => {
-                let _ = stream.write_all(
-                    bad_request_response("No OAuth state was included in this request.").as_bytes(),
+                write_oauth_response_best_effort(
+                    &mut stream,
+                    bad_request_response("No OAuth state was included in this request."),
                 );
                 continue;
             }
         };
 
         if state != expected_state {
-            let _ = stream.write_all(
-                bad_request_response("OAuth state mismatch. Please retry the latest login flow.")
-                    .as_bytes(),
+            write_oauth_response_best_effort(
+                &mut stream,
+                bad_request_response("OAuth state mismatch. Please retry the latest login flow."),
             );
             continue;
         }
@@ -340,9 +365,11 @@ pub async fn wait_for_callback_async_on_listener(
 
         let parts: Vec<&str> = request_line.split_whitespace().collect();
         if parts.len() < 2 {
-            let _ = writer
-                .write_all(bad_request_response("Invalid HTTP request.").as_bytes())
-                .await;
+            write_oauth_response_async_best_effort(
+                &mut writer,
+                bad_request_response("Invalid HTTP request."),
+            )
+            .await;
             continue;
         }
 
@@ -350,11 +377,11 @@ pub async fn wait_for_callback_async_on_listener(
         let url = match url::Url::parse(&format!("http://localhost{}", path)) {
             Ok(url) => url,
             Err(_) => {
-                let _ = writer
-                    .write_all(
-                        bad_request_response("Could not parse OAuth callback URL.").as_bytes(),
-                    )
-                    .await;
+                write_oauth_response_async_best_effort(
+                    &mut writer,
+                    bad_request_response("Could not parse OAuth callback URL."),
+                )
+                .await;
                 continue;
             }
         };
@@ -364,11 +391,11 @@ pub async fn wait_for_callback_async_on_listener(
             .find(|(k, _)| k == "error")
             .map(|(_, v)| v.to_string())
         {
-            let _ = writer
-                .write_all(
-                    bad_request_response("Authentication was denied or cancelled.").as_bytes(),
-                )
-                .await;
+            write_oauth_response_async_best_effort(
+                &mut writer,
+                bad_request_response("Authentication was denied or cancelled."),
+            )
+            .await;
             anyhow::bail!("OAuth provider returned error: {}", error);
         }
 
@@ -379,12 +406,11 @@ pub async fn wait_for_callback_async_on_listener(
         {
             Some(code) => code,
             None => {
-                let _ = writer
-                    .write_all(
-                        bad_request_response("No authorization code was included in this request.")
-                            .as_bytes(),
-                    )
-                    .await;
+                write_oauth_response_async_best_effort(
+                    &mut writer,
+                    bad_request_response("No authorization code was included in this request."),
+                )
+                .await;
                 continue;
             }
         };
@@ -396,25 +422,21 @@ pub async fn wait_for_callback_async_on_listener(
         {
             Some(state) => state,
             None => {
-                let _ = writer
-                    .write_all(
-                        bad_request_response("No OAuth state was included in this request.")
-                            .as_bytes(),
-                    )
-                    .await;
+                write_oauth_response_async_best_effort(
+                    &mut writer,
+                    bad_request_response("No OAuth state was included in this request."),
+                )
+                .await;
                 continue;
             }
         };
 
         if state != expected_state {
-            let _ = writer
-                .write_all(
-                    bad_request_response(
-                        "OAuth state mismatch. Please retry the latest login flow.",
-                    )
-                    .as_bytes(),
-                )
-                .await;
+            write_oauth_response_async_best_effort(
+                &mut writer,
+                bad_request_response("OAuth state mismatch. Please retry the latest login flow."),
+            )
+            .await;
             continue;
         }
 
@@ -431,6 +453,26 @@ pub async fn wait_for_callback_async_on_listener(
 }
 
 /// Perform OAuth login for Claude
+fn print_manual_oauth_url(auth_url: &str, qr_heading: &str) {
+    eprintln!("Open this URL in your browser:\n\n{}\n", auth_url);
+    if let Some(qr) = crate::login_qr::indented_section(auth_url, qr_heading, "    ") {
+        eprintln!("{qr}\n");
+    }
+}
+
+fn read_manual_auth_input(prompt: &str, empty_message: &str) -> Result<String> {
+    eprintln!("{prompt}\n");
+    eprint!("> ");
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!(empty_message.to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
 pub async fn login_claude(no_browser: bool) -> Result<OAuthTokens> {
     let (verifier, challenge) = generate_pkce();
     if let Ok(code) = std::env::var("JCODE_CLAUDE_AUTH_CODE") {
@@ -456,17 +498,16 @@ pub async fn login_claude(no_browser: bool) -> Result<OAuthTokens> {
         let auth_url = claude_auth_url(&redirect_uri, &challenge, &verifier);
         let manual_auth_url = claude_auth_url(claude::REDIRECT_URI, &challenge, &verifier);
 
-        eprintln!("\nOpen this URL in your browser:\n");
-        eprintln!("{}\n", auth_url);
-        if let Some(qr) = crate::login_qr::indented_section(
-            &manual_auth_url,
-            "No browser on this machine? Scan this QR on another device, finish login there, then paste the full callback URL back here:",
-            "    ",
-        ) {
-            eprintln!("{qr}\n");
+        let browser_suppressed = crate::auth::browser_suppressed(no_browser);
+        if browser_suppressed {
+            eprintln!("\nManual Claude auth required.\n");
+            print_manual_oauth_url(&manual_auth_url, QR_CLAUDE_CALLBACK_HEADING);
+        } else {
+            eprintln!("\nOpening browser for Claude login...\n");
+            eprintln!("If the browser does not open, jcode will fall back to manual code paste.");
         }
-        eprintln!("Opening browser for Claude login...\n");
-        let browser_opened = if crate::auth::browser_suppressed(no_browser) {
+
+        let browser_opened = if browser_suppressed {
             false
         } else {
             open::that(&auth_url).is_ok()
@@ -477,9 +518,10 @@ pub async fn login_claude(no_browser: bool) -> Result<OAuthTokens> {
                 redirect_uri
             );
         } else {
-            eprintln!(
-                "Couldn't open a browser on this machine. Use the QR code or manual URL above, then paste the callback URL here.\n"
-            );
+            eprintln!("Couldn't open a browser on this machine. Falling back to manual paste.\n");
+            if !browser_suppressed {
+                print_manual_oauth_url(&manual_auth_url, QR_CLAUDE_CALLBACK_HEADING);
+            }
         }
 
         if browser_opened {
@@ -504,49 +546,31 @@ pub async fn login_claude(no_browser: bool) -> Result<OAuthTokens> {
             }
         }
 
-        eprintln!("Paste the authorization code (or callback URL) here:\n");
-        eprint!("> ");
-        std::io::stdout().flush()?;
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            anyhow::bail!("No authorization code entered.");
-        }
+        let input = read_manual_auth_input(
+            "Paste the authorization code (or callback URL) here:",
+            "No authorization code entered.",
+        )?;
         eprintln!("Exchanging code for tokens...");
-        let selected_redirect_uri = claude_redirect_uri_for_input(trimmed, &redirect_uri);
-        return exchange_claude_code(&verifier, trimmed, &selected_redirect_uri).await;
+        let selected_redirect_uri = claude_redirect_uri_for_input(&input, &redirect_uri);
+        return exchange_claude_code(&verifier, &input, &selected_redirect_uri).await;
     }
 
     // Last-resort manual flow if localhost callback binding is unavailable.
     let auth_url = claude_auth_url(claude::REDIRECT_URI, &challenge, &verifier);
 
-    eprintln!("\nOpen this URL in your browser:\n");
-    eprintln!("{}\n", auth_url);
-    if let Some(qr) = crate::login_qr::indented_section(
-        &auth_url,
-        "Scan this QR on another device if this machine has no browser:",
-        "    ",
-    ) {
-        eprintln!("{qr}\n");
+    eprintln!("\nManual Claude auth required.\n");
+    print_manual_oauth_url(&auth_url, QR_BROWSERLESS_HEADING);
+    if !crate::auth::browser_suppressed(no_browser)
+        && let Err(err) = open::that(&auth_url)
+    {
+        eprintln!("warning: failed to open browser for Claude login: {err}");
     }
-    eprintln!("Opening browser for Claude login...\n");
-    if !crate::auth::browser_suppressed(no_browser) {
-        let _ = open::that(&auth_url);
-    }
-    eprintln!("After logging in, copy and paste the callback URL or code here:\n");
-    eprint!("> ");
-    std::io::stdout().flush()?;
-
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("No authorization code entered.");
-    }
-
+    let input = read_manual_auth_input(
+        "After logging in, copy and paste the callback URL or code here:",
+        "No authorization code entered.",
+    )?;
     eprintln!("Exchanging code for tokens...");
-    exchange_claude_code(&verifier, trimmed, claude::REDIRECT_URI).await
+    exchange_claude_code(&verifier, &input, claude::REDIRECT_URI).await
 }
 
 pub fn claude_auth_url(redirect_uri: &str, challenge: &str, state: &str) -> String {
@@ -609,7 +633,13 @@ pub fn claude_redirect_uri_for_input(input: &str, fallback_redirect_uri: &str) -
 
     let matches_manual = [claude::REDIRECT_URI, claude::LEGACY_REDIRECT_URI]
         .iter()
-        .filter_map(|candidate| url::Url::parse(candidate).ok())
+        .filter_map(|candidate| match url::Url::parse(candidate) {
+            Ok(url) => Some(url),
+            Err(err) => {
+                eprintln!("warning: invalid built-in Claude redirect URI {candidate}: {err}");
+                None
+            }
+        })
         .any(|expected_manual| {
             url.scheme() == expected_manual.scheme()
                 && url.host_str() == expected_manual.host_str()
@@ -845,18 +875,23 @@ pub async fn login_openai(no_browser: bool) -> Result<OAuthTokens> {
     let redirect_uri = openai::redirect_uri(port);
     let auth_url = openai_auth_url_with_prompt(&redirect_uri, &challenge, &state, Some("login"));
 
-    eprintln!("\nOpen this URL in your browser:\n");
-    eprintln!("{}\n", auth_url);
-    if let Some(qr) = crate::login_qr::indented_section(
-        &auth_url,
-        "Scan this QR on another device if this machine has no browser:",
-        "    ",
-    ) {
-        eprintln!("{qr}\n");
+    let callback_listener = match bind_callback_listener(port) {
+        Ok(listener) => Some(listener),
+        Err(err) => {
+            eprintln!("warning: OpenAI callback listener unavailable on port {port}: {err}");
+            None
+        }
+    };
+    let browser_suppressed = crate::auth::browser_suppressed(no_browser);
+    if browser_suppressed {
+        eprintln!("\nManual OpenAI login required.\n");
+        print_manual_oauth_url(&auth_url, QR_BROWSERLESS_HEADING);
+    } else {
+        eprintln!("\nOpening browser for OpenAI login...\n");
+        eprintln!("If the browser does not open, jcode will fall back to manual callback paste.");
     }
 
-    let callback_listener = bind_callback_listener(port).ok();
-    let browser_opened = if crate::auth::browser_suppressed(no_browser) {
+    let browser_opened = if browser_suppressed {
         false
     } else {
         open::that(&auth_url).is_ok()
@@ -888,22 +923,18 @@ pub async fn login_openai(no_browser: bool) -> Result<OAuthTokens> {
                 port
             );
         }
-    } else if !browser_opened {
-        eprintln!(
-            "Couldn't open a browser on this machine. Use the QR code above, then paste the full callback URL here.\n"
-        );
+    } else {
+        eprintln!("Couldn't open a browser on this machine. Falling back to manual paste.\n");
+        if !browser_suppressed {
+            print_manual_oauth_url(&auth_url, QR_BROWSERLESS_HEADING);
+        }
     }
 
-    eprintln!("Paste the full callback URL (or query string) here:\n");
-    eprint!("> ");
-    std::io::stdout().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("No callback URL entered.");
-    }
-    exchange_openai_callback_input(&verifier, trimmed, &state, &redirect_uri).await
+    let input = read_manual_auth_input(
+        "Paste the full callback URL (or query string) here:",
+        "No callback URL entered.",
+    )?;
+    exchange_openai_callback_input(&verifier, &input, &state, &redirect_uri).await
 }
 
 /// Save Claude tokens to jcode's credentials file (active account or first numbered account).
@@ -918,10 +949,10 @@ pub fn save_claude_tokens_for_account(tokens: &OAuthTokens, label: &str) -> Resu
         .into_iter()
         .find(|account| account.label == label);
     let scopes = if tokens.scopes.is_empty() {
-        existing
-            .as_ref()
-            .map(|account| account.scopes.clone())
-            .unwrap_or_default()
+        match existing.as_ref() {
+            Some(account) => account.scopes.clone(),
+            None => Vec::new(),
+        }
     } else {
         tokens.scopes.clone()
     };
@@ -1115,15 +1146,7 @@ async fn refresh_claude_tokens_inner(
 /// Refresh Claude OAuth tokens
 pub async fn refresh_claude_tokens(refresh_token: &str) -> Result<OAuthTokens> {
     let result = refresh_claude_tokens_inner(refresh_token, None).await;
-
-    match &result {
-        Ok(_) => {
-            let _ = crate::auth::refresh_state::record_success("claude");
-        }
-        Err(err) => {
-            let _ = crate::auth::refresh_state::record_failure("claude", err.to_string());
-        }
-    }
+    record_refresh_result("claude", &result);
 
     result
 }
@@ -1134,15 +1157,7 @@ pub async fn refresh_claude_tokens_for_account(
     label: &str,
 ) -> Result<OAuthTokens> {
     let result = refresh_claude_tokens_inner(refresh_token, Some(label)).await;
-
-    match &result {
-        Ok(_) => {
-            let _ = crate::auth::refresh_state::record_success("claude");
-        }
-        Err(err) => {
-            let _ = crate::auth::refresh_state::record_failure("claude", err.to_string());
-        }
-    }
+    record_refresh_result("claude", &result);
 
     result
 }
@@ -1231,16 +1246,19 @@ async fn refresh_openai_tokens_inner(
     }
     .await;
 
-    match &result {
-        Ok(_) => {
-            let _ = crate::auth::refresh_state::record_success("openai");
-        }
-        Err(err) => {
-            let _ = crate::auth::refresh_state::record_failure("openai", err.to_string());
-        }
-    }
+    record_refresh_result("openai", &result);
 
     result
+}
+
+fn record_refresh_result(provider: &str, result: &Result<OAuthTokens>) {
+    let record_result = match result {
+        Ok(_) => crate::auth::refresh_state::record_success(provider),
+        Err(err) => crate::auth::refresh_state::record_failure(provider, err.to_string()),
+    };
+    if let Err(err) = record_result {
+        eprintln!("warning: failed to record {provider} refresh state: {err}");
+    }
 }
 
 /// Build a Claude token exchange request (extracted for testability).
@@ -1264,7 +1282,10 @@ fn build_claude_exchange_request(
     (
         claude::TOKEN_URL.to_string(),
         "application/json".to_string(),
-        serde_json::to_vec(&body).expect("Claude exchange test body should serialize"),
+        match serde_json::to_vec(&body) {
+            Ok(bytes) => bytes,
+            Err(err) => format!(r#"{{"serialization_error":"{}"}}"#, err).into_bytes(),
+        },
     )
 }
 
@@ -1285,7 +1306,10 @@ fn build_claude_refresh_request_with_scope(
         "refresh_token": refresh_token,
         "client_id": claude::CLIENT_ID,
     });
-    let mut body = body.as_object().expect("refresh body object").clone();
+    let mut body = match body.as_object() {
+        Some(object) => object.clone(),
+        None => serde_json::Map::new(),
+    };
     if let Some(scope) = scope {
         body.insert(
             "scope".to_string(),
@@ -1295,7 +1319,10 @@ fn build_claude_refresh_request_with_scope(
     (
         claude::TOKEN_URL.to_string(),
         "application/json".to_string(),
-        serde_json::to_vec(&body).expect("Claude refresh test body should serialize"),
+        match serde_json::to_vec(&body) {
+            Ok(bytes) => bytes,
+            Err(err) => format!(r#"{{"serialization_error":"{}"}}"#, err).into_bytes(),
+        },
     )
 }
 

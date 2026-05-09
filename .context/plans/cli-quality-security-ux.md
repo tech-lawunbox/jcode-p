@@ -1,0 +1,76 @@
+# Plano incremental: testes, segurança, performance e UX do CLI
+
+## Objetivo
+Melhorar o CLI/TUI do Jcode em fatias verificáveis, sem tentar reescrever tudo de uma vez. Cada rodada deve entregar uma melhoria concreta, teste associado e evidência de build.
+
+## Eixos
+1. **Testes**
+   - Ampliar testes unitários para helpers puros de UI, tema, animação, layout e formatação.
+   - Cobrir fluxos críticos com debug socket: reload, streaming, running tool, rate limit, fila e modo shell.
+   - Transformar bugs reproduzidos em regressões permanentes.
+
+2. **Segurança**
+   - Executar e fortalecer budgets: `check_panic_budget.py`, `check_swallowed_error_budget.py`, `security_preflight.sh`.
+   - Revisar tool permissions, ações destrutivas, redaction de secrets e telemetry privacy.
+   - Adicionar testes para sanitização/normalização quando houver superfície de entrada externa.
+
+3. **Performance**
+   - Medir antes/depois com scripts de startup, memória e TUI bench.
+   - Evitar alocações por frame em paths de renderização quando helpers puros puderem ser cacheados ou isolados.
+   - Respeitar reduced-motion e FPS configurado, com limites seguros.
+
+4. **Interface, design e animações**
+   - Padronizar animações em `jcode-tui-style` para serem testáveis e reutilizáveis.
+   - Melhorar estados visuais de processamento, ferramentas, batch, streaming e alertas.
+   - Manter fallback estático em modo reduced-motion.
+
+## Primeira fatia implementada
+- Endurecer cálculo de spinner contra `NaN`, FPS inválido e tempos negativos.
+- Extrair barras animadas de ferramenta para `jcode-tui-style::theme::tool_activity_bars`.
+- Melhorar visual de ferramenta em execução com trilha simétrica de 5 células (`●`, `◆`, `·`).
+- Adicionar testes unitários para timing inválido, reduced-motion e simetria da barra.
+
+## Critérios de aceite desta rodada
+- `cargo test -p jcode-tui-style`
+- `cargo check -p jcode`
+- scripts de segurança/budget relevantes executados quando não excederem o tempo da rodada
+- commit com plano e implementação
+
+## Próximas rodadas sugeridas
+1. Snapshot/debug-socket do status `RunningTool` para validar rendering real.
+2. Refatorar outros indicadores inline para helpers testáveis.
+3. ~~Adicionar preflight composto que roda budgets de panic, swallowed errors, dependency boundaries e testes de tema.~~ Implementado em `scripts/cli_quality_preflight.sh`.
+4. Perfil de alocações/render frame em `draw_status` e idle animations.
+5. Revisão de redaction em logs, telemetry e tool outputs.
+
+## Segunda fatia implementada
+- Adicionar `scripts/cli_quality_preflight.sh` como gate rápido e reproduzível para CLI/TUI.
+- O preflight roda formatação, `check_panic_budget.py`, `check_swallowed_error_budget.py`, `check_dependency_boundaries.py`, `cargo test -p jcode-tui-style` e `cargo check -p jcode`.
+- Como o orçamento de swallowed errors ainda tem dívida histórica ampla, o modo padrão reporta a falha como warning sem mascarar o output. Use `--strict-swallowed` para transformar essa etapa em bloqueio quando a dívida for reduzida ou ratchetada intencionalmente.
+- Use `--check` em CI/validação limpa para não modificar formatação.
+
+## Terceira fatia implementada
+- Reduzir ocorrências reais do orçamento de swallowed errors de `2126` para `2084` antes do ratchet.
+- Zerar as ocorrências novas em `crates/jcode-storage/src/lib.rs`, com tratamento explícito/log de falhas best-effort em hardening de permissões, sync, cleanup e recovery de backup.
+- Zerar as ocorrências novas em `crates/jcode-build-support/src/lib.rs`, preservando stderr de smoke tests e registrando falhas de shutdown de processo.
+- Reduzir `src/overnight.rs` de `30` para `10` ocorrências, logando falhas best-effort de manifest/event/review/task-card em vez de engolir erros silenciosamente.
+- Atualizar `scripts/swallowed_error_budget.json` após limpeza intencional para que `scripts/cli_quality_preflight.sh --check --strict-swallowed` passe e bloqueie novas regressões.
+
+## Quarta fatia implementada
+- Ampliar `redact_secrets` para cobrir headers `Authorization`/`Proxy-Authorization`, tokens `Bearer`, variáveis genéricas com `PASSWORD`, `TOKEN` ou `SECRET`, e campos JSON sensíveis.
+- Adicionar regressões focadas para impedir vazamento de bearer token, basic auth, password, refresh token e client secret em histórico/export/tool output.
+
+## Quinta fatia implementada
+- Extrair mais lógica inline de status do TUI para `jcode-tui-style`: `status_queue_suffix` e `retry_delay_label`.
+- Adicionar testes puros para sufixo de fila e formatação de retry em segundos, minutos e horas.
+- Aplicar os helpers em `src/tui/ui_input.rs`, mantendo o rendering real igual e tornando regressões de texto/status mais fáceis de testar.
+
+## Sexta fatia implementada
+- Extrair a composição textual do status `RunningTool` para `running_tool_status_spans`, isolando barras animadas, detalhe da ferramenta, avisos experimentais, subagente, transporte, elapsed, cache miss, atalho de background e fila.
+- Adicionar um snapshot textual unitário cobrindo o estado rico de `RunningTool`, incluindo websocket, provider upstream, cache miss e fila pendente.
+- Isso valida o rendering real do status sem depender de terminal gráfico e reduz risco de regressões nas próximas mudanças de UI.
+
+## Sétima fatia implementada
+- Extrair a formatação textual de cache miss para `jcode-tui-style::theme::cache_miss_label`.
+- Reusar o helper nos status de streaming e `RunningTool`, eliminando duplicação inline no TUI.
+- Adicionar teste unitário para zero (`kv`), valores exatos e arredondamento em milhares.

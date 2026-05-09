@@ -337,6 +337,7 @@ async fn handle_lightweight_control_request(
             working_dir,
             initial_message,
             request_nonce,
+            run_id,
         } => {
             handle_comm_spawn(
                 id,
@@ -344,6 +345,7 @@ async fn handle_lightweight_control_request(
                 working_dir,
                 initial_message,
                 request_nonce,
+                run_id,
                 &client_event_tx,
                 sessions,
                 global_session_id,
@@ -566,6 +568,7 @@ async fn handle_lightweight_control_request(
             prefer_spawn,
             spawn_if_needed,
             message,
+            run_id,
         } => {
             handle_comm_assign_next(
                 id,
@@ -575,6 +578,7 @@ async fn handle_lightweight_control_request(
                 prefer_spawn,
                 spawn_if_needed,
                 message,
+                run_id,
                 &client_event_tx,
                 sessions,
                 global_session_id,
@@ -666,14 +670,19 @@ async fn handle_lightweight_control_request(
             session_id: req_session_id,
             target_status,
             session_ids: requested_ids,
+            owned_only,
             mode,
+            run_id,
             timeout_secs,
         } => {
+            let owned_only = owned_only.unwrap_or(requested_ids.is_empty());
             handle_comm_await_members(
                 id,
                 req_session_id,
                 target_status,
                 requested_ids,
+                owned_only,
+                run_id,
                 mode,
                 timeout_secs,
                 CommAwaitMembersContext {
@@ -1006,6 +1015,9 @@ pub(super) async fn handle_client(
                     .lock()
                     .await
                     .insert(request_id.clone(), req.response_tx);
+                // A stdin request means a foreground tool is blocked waiting for a human
+                // response. Emit once at the forwarding source, not on every UI render.
+                crate::user_attention::emit_human_intervention_alert("stdin-request");
                 let _ = client_event_tx.send(ServerEvent::StdinRequest {
                     request_id,
                     prompt: req.prompt,
@@ -2156,6 +2168,7 @@ pub(super) async fn handle_client(
                 working_dir,
                 initial_message,
                 request_nonce,
+                run_id,
             } => {
                 handle_comm_spawn(
                     id,
@@ -2163,6 +2176,7 @@ pub(super) async fn handle_client(
                     working_dir,
                     initial_message,
                     request_nonce,
+                    run_id,
                     &client_event_tx,
                     &sessions,
                     &global_session_id,
@@ -2395,6 +2409,7 @@ pub(super) async fn handle_client(
                 prefer_spawn,
                 spawn_if_needed,
                 message,
+                run_id,
             } => {
                 handle_comm_assign_next(
                     id,
@@ -2404,6 +2419,7 @@ pub(super) async fn handle_client(
                     prefer_spawn,
                     spawn_if_needed,
                     message,
+                    run_id,
                     &client_event_tx,
                     &sessions,
                     &global_session_id,
@@ -2499,14 +2515,19 @@ pub(super) async fn handle_client(
                 session_id: req_session_id,
                 target_status,
                 session_ids: requested_ids,
+                owned_only,
                 mode,
+                run_id,
                 timeout_secs,
             } => {
+                let owned_only = owned_only.unwrap_or(requested_ids.is_empty());
                 handle_comm_await_members(
                     id,
                     req_session_id,
                     target_status,
                     requested_ids,
+                    owned_only,
+                    run_id,
                     mode,
                     timeout_secs,
                     CommAwaitMembersContext {
