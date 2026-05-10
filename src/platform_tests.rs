@@ -10,8 +10,8 @@ fn desired_nofile_soft_limit_only_raises_when_possible() {
 #[cfg(unix)]
 #[test]
 fn spawn_detached_skips_setsid_when_in_tmux() {
-    use tempfile::NamedTempFile;
     use std::sync::Mutex;
+    use tempfile::NamedTempFile;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -58,8 +58,8 @@ fn spawn_detached_skips_setsid_when_in_tmux() {
 #[cfg(unix)]
 #[test]
 fn spawn_detached_creates_new_session_when_not_in_tmux() {
-    use tempfile::NamedTempFile;
     use std::sync::Mutex;
+    use tempfile::NamedTempFile;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 

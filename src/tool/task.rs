@@ -9,7 +9,7 @@ use crate::session::Session;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -142,8 +142,7 @@ impl Tool for SubagentTool {
             cfg.subagent.run_in_background.unwrap_or(false)
         };
         let output_mode = params.output_mode;
-        let subagent_model = params.model.clone()
-            .or_else(|| cfg.subagent.model.clone());
+        let subagent_model = params.model.clone().or_else(|| cfg.subagent.model.clone());
 
         // Merge blocked tools: always blocked + config blocked
         let mut blocked = vec![
@@ -260,10 +259,14 @@ impl Tool for SubagentTool {
                             .map_err(|e| anyhow::anyhow!("Failed to load session: {}", e))?;
 
                         // Re-resolve model (simplified - use provider default)
-                        let allowed: HashSet<String> = registry.tool_names().await.into_iter().collect();
+                        let allowed: HashSet<String> =
+                            registry.tool_names().await.into_iter().collect();
                         let allowed: HashSet<String> = allowed
                             .into_iter()
-                            .filter(|name| !["subagent", "task", "todo", "todowrite", "todoread"].contains(&name.as_str()))
+                            .filter(|name| {
+                                !["subagent", "task", "todo", "todowrite", "todoread"]
+                                    .contains(&name.as_str())
+                            })
                             .collect();
 
                         let mut agent = Agent::new_with_session(
@@ -293,7 +296,8 @@ impl Tool for SubagentTool {
                             history.as_deref(),
                             None,
                         );
-                        tokio::fs::write(&output_path, &output).await
+                        tokio::fs::write(&output_path, &output)
+                            .await
                             .map_err(|e| anyhow::anyhow!("Failed to write output: {}", e))?;
 
                         Ok(TaskResult::completed(None))
@@ -303,8 +307,7 @@ impl Tool for SubagentTool {
 
             return Ok(ToolOutput::new(format!(
                 "Subagent '{}' started in background with task ID: {}",
-                subagent_description,
-                info.task_id
+                subagent_description, info.task_id
             ))
             .with_metadata(json!({
                 "taskId": info.task_id,

@@ -348,7 +348,7 @@ fn spawn_assigned_task_run(
             &swarms_by_id,
         )
         .await;
-        
+
         // Set report_back_to so worker knows to report completion to coordinator
         crate::server::swarm::set_member_report_back_to(
             &target_session,
@@ -356,7 +356,7 @@ fn spawn_assigned_task_run(
             &swarm_members,
         )
         .await;
-        
+
         update_member_status(
             &target_session,
             "running",
@@ -505,6 +505,7 @@ fn spawn_assigned_task_run(
                     Some(&event_counter),
                     Some(&swarm_event_tx),
                     Some(&sessions),
+                    None, // stop_worker_on_completion - task runner handles lifecycle
                 )
                 .await;
             }

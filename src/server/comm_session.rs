@@ -521,6 +521,7 @@ pub(super) async fn spawn_swarm_agent(
                     Some(&event_counter2),
                     Some(&swarm_event_tx2),
                     Some(&sessions_for_alert),
+                    Some(true), // stop_worker_on_completion - headless spawned agent done
                 )
                 .await;
             });
@@ -1027,6 +1028,37 @@ async fn require_coordinator_swarm(
                 retry_after_secs: None,
             });
             None
+        }
+    }
+}
+
+/// Clean up a swarm worker session after it reports completion to the coordinator.
+/// This removes the agent from sessions and removes the member from the swarm,
+/// but does NOT send a SessionCloseRequested event (the worker has already finished).
+pub(super) async fn cleanup_swarm_worker_session(
+    target_session: &str,
+    _coordinator_session_id: Option<&str>,
+    swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
+    swarms_by_id: &Arc<RwLock<HashMap<String, HashSet<String>>>>,
+) {
+    // Remove from swarm members (but not from sessions - let the worker close naturally)
+    let removed_swarm_id = {
+        let mut members = swarm_members.write().await;
+        if let Some(member) = members.remove(target_session) {
+            member.swarm_id
+        } else {
+            None
+        }
+    };
+
+    if let Some(ref swarm_id) = removed_swarm_id {
+        // Remove from swarms_by_id
+        let mut swarms = swarms_by_id.write().await;
+        if let Some(members_set) = swarms.get_mut(swarm_id) {
+            members_set.remove(target_session);
+            if members_set.is_empty() {
+                swarms.remove(swarm_id);
+            }
         }
     }
 }

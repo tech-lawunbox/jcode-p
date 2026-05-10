@@ -26,9 +26,7 @@ async fn check_swarm_needs_drain(
     swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
 ) -> bool {
     let members = swarm_members.read().await;
-    members
-        .iter()
-        .any(|(_, member)| member.status == "running")
+    members.iter().any(|(_, member)| member.status == "running")
 }
 
 /// Drain swarm members before reload by notifying coordinator
@@ -152,24 +150,25 @@ async fn drain_swarm_members(
 
         // Wait for status change events or timeout
         match tokio::time::timeout(remaining, event_rx.recv()).await {
-            Ok(Ok(event)) => {
-                match &event.event {
-                    SwarmEventType::StatusChange { new_status, .. } => {
-                        if !matches!(new_status.as_str(), "running" | "running_stale") {
-                            drained.push(event.session_id.clone());
-                        }
-                    }
-                    SwarmEventType::ReloadReady { drained_sessions, failed_sessions } => {
-                        drained.extend(drained_sessions.clone());
-                        failed.extend(failed_sessions.clone());
-                        break;
-                    }
-                    SwarmEventType::MemberChange { action } if action == "left" => {
+            Ok(Ok(event)) => match &event.event {
+                SwarmEventType::StatusChange { new_status, .. } => {
+                    if !matches!(new_status.as_str(), "running" | "running_stale") {
                         drained.push(event.session_id.clone());
                     }
-                    _ => {}
                 }
-            }
+                SwarmEventType::ReloadReady {
+                    drained_sessions,
+                    failed_sessions,
+                } => {
+                    drained.extend(drained_sessions.clone());
+                    failed.extend(failed_sessions.clone());
+                    break;
+                }
+                SwarmEventType::MemberChange { action } if action == "left" => {
+                    drained.push(event.session_id.clone());
+                }
+                _ => {}
+            },
             Ok(Err(_)) => break, // Channel closed
             Err(_) => {
                 // Timeout - collect remaining running sessions as failed

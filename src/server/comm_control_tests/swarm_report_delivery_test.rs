@@ -21,11 +21,7 @@
 //
 // The agent's actual findings are LOST unless it explicitly calls `swarm action=report`.
 
-use crate::server::SwarmMember;
-use crate::swarm::append_swarm_completion_report_instructions;
-use std::collections::HashMap;
-use std::time::Instant;
-use tokio::sync::mpsc;
+// SwarmMember, HashMap, Instant, mpsc are imported from parent module (comm_control_tests.rs)
 
 // ============================================================================
 // TEST 1: Verify completion report instructions are injected
@@ -85,6 +81,7 @@ async fn coordinator_receives_empty_report_when_agent_skips_report_action() {
         Some(&event_counter),
         Some(&swarm_event_tx),
         None, // sessions
+        None, // stop_worker_on_completion
     )
     .await;
     
@@ -137,6 +134,7 @@ async fn coordinator_receives_findings_when_agent_calls_report_action() {
         Some(&event_counter),
         Some(&swarm_event_tx),
         None,
+        None, // stop_worker_on_completion
     )
     .await;
     
@@ -275,4 +273,66 @@ fn test_member_with_report_to(session_id: &str, swarm_id: &str, status: &str, re
 // 2. Use `assign_task` which has better tracking
 // 3. Have agents write findings to files, read after await
 // 4. (Future) Server-side: extract output from agent session if no report received
+
+// ============================================================================
+// TEST 5: Verify auto-cleanup of spawned worker after explicit report
+// ============================================================================
+
+#[tokio::test]
+async fn spawned_worker_is_cleaned_up_after_explicit_report() {
+    let swarm_id = "swarm-auto-cleanup-test";
+    let coordinator_id = "coordinator";
+    let worker_id = "worker";
+
+    let swarm_members = Arc::new(RwLock::new(HashMap::from([
+        (coordinator_id.to_string(), {
+            let mut m = test_member(coordinator_id, swarm_id, "ready");
+            m.role = "coordinator".to_string();
+            m
+        }),
+        (worker_id.to_string(), test_member_with_report_to(worker_id, swarm_id, "ready", coordinator_id)),
+    ])));
+    let swarms_by_id = Arc::new(RwLock::new(HashMap::from([
+        (swarm_id.to_string(), HashSet::from([coordinator_id.to_string(), worker_id.to_string()])),
+    ])));
+    let event_history = Arc::new(RwLock::new(VecDeque::new()));
+    let event_counter = Arc::new(AtomicU64::new(1));
+    let (swarm_event_tx, _rx) = broadcast::channel(32);
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+
+    // Worker calls action=report with findings AND auto_cleanup is enabled
+    crate::server::swarm::update_member_status_with_report(
+        worker_id,
+        "ready",
+        Some("Task complete.".to_string()),
+        Some("FINDINGS: All tests passed, no issues found.".to_string()),
+        &swarm_members,
+        &swarms_by_id,
+        Some(&event_history),
+        Some(&event_counter),
+        Some(&swarm_event_tx),
+        Some(&sessions),
+        Some(true), // stop_worker_on_completion - enable auto-cleanup
+    )
+    .await;
+
+    // Give the background cleanup task time to run
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Verify: worker should be removed from swarm members
+    let members = swarm_members.read().await;
+    assert!(
+        members.get(worker_id).is_none(),
+        "Worker should be auto-cleaned from swarm members after explicit report"
+    );
+    drop(members);
+
+    // Verify: worker should be removed from swarms_by_id
+    let swarms = swarms_by_id.read().await;
+    let swarm_members_set = swarms.get(swarm_id);
+    assert!(
+        swarm_members_set.is_none() || !swarm_members_set.unwrap().contains(worker_id),
+        "Worker should be removed from swarms_by_id after explicit report"
+    );
+}
 //

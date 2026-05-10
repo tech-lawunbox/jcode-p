@@ -481,7 +481,11 @@ impl Config {
         }
         if let Ok(v) = std::env::var("JCODE_SUBAGENT_MODEL") {
             let v = v.trim();
-            self.subagent.model = if v.is_empty() { None } else { Some(v.to_string()) };
+            self.subagent.model = if v.is_empty() {
+                None
+            } else {
+                Some(v.to_string())
+            };
         }
         if let Ok(v) = std::env::var("JCODE_SUBAGENT_BLOCKED_TOOLS") {
             self.subagent.blocked_tools = Some(parse_env_list(&v));

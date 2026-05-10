@@ -38,18 +38,22 @@ pub(super) async fn create_headless_session(
     let swarm_enabled = crate::config::config().features.swarm;
 
     // Parse command format: "create_session:{dir}|{swarm_id}" or "create_session:{dir}"
-    let (working_dir, explicit_swarm_id) = if let Some(cmd_str) = command.strip_prefix("create_session:") {
-        let parts: Vec<&str> = cmd_str.trim().splitn(2, '|').collect();
-        let dir = if !parts[0].is_empty() {
-            Some(std::path::PathBuf::from(parts[0]))
+    let (working_dir, explicit_swarm_id) =
+        if let Some(cmd_str) = command.strip_prefix("create_session:") {
+            let parts: Vec<&str> = cmd_str.trim().splitn(2, '|').collect();
+            let dir = if !parts[0].is_empty() {
+                Some(std::path::PathBuf::from(parts[0]))
+            } else {
+                None
+            };
+            let swarm_id = parts
+                .get(1)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            (dir, swarm_id)
         } else {
-            None
+            (None, None)
         };
-        let swarm_id = parts.get(1).filter(|s| !s.is_empty()).map(|s| s.to_string());
-        (dir, swarm_id)
-    } else {
-        (None, None)
-    };
 
     let provider = provider_template.fork();
     let registry = Registry::new(provider.clone()).await;
