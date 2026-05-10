@@ -296,6 +296,12 @@ async fn ensure_client_swarm_member(
             if member_name.is_some() {
                 member.friendly_name = member_name.clone();
             }
+            // Sync working_dir from agent session to SwarmMember on reconnect.
+            // This ensures the coordinator's working_dir is always up-to-date
+            // for spawn resolution, preventing fallback to stale or default cwd.
+            if let Some(ref dir) = working_dir {
+                member.working_dir = Some(dir.clone());
+            }
         } else {
             let now = Instant::now();
             members.insert(

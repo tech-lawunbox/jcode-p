@@ -281,8 +281,17 @@ pub(super) async fn spawn_swarm_agent(
     mcp_pool: &Arc<crate::mcp::SharedMcpPool>,
     soft_interrupt_queues: &SessionInterruptQueues,
 ) -> anyhow::Result<String> {
+    // Get coordinator's working_dir from agent session before spawn resolution.
+    // This ensures spawned agents inherit the coordinator's actual working directory
+    // rather than falling back to a stale SwarmMember.working_dir or process cwd.
+    let coordinator_working_dir = {
+        let sessions_guard = sessions.read().await;
+        sessions_guard.get(req_session_id)
+            .and_then(|agent| agent.try_lock().ok())
+            .and_then(|guard| guard.working_dir().map(String::from))
+    };
     let resolved_working_dir =
-        resolve_spawn_working_dir(working_dir, req_session_id, sessions, swarm_members).await;
+        resolve_spawn_working_dir(working_dir.or(coordinator_working_dir), req_session_id, sessions, swarm_members).await;
     let coordinator_model = {
         let agent_sessions = sessions.read().await;
         agent_sessions.get(req_session_id).and_then(|agent| {
