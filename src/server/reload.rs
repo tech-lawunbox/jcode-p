@@ -6,12 +6,184 @@ use jcode_agent_runtime::InterruptSignal;
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, RwLock, broadcast, watch};
 
 type SessionAgents = Arc<RwLock<HashMap<String, Arc<Mutex<Agent>>>>>;
 
 const RELOAD_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+const DEFAULT_SWARM_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Atomic counter for generating unique event IDs in reload context
+fn next_event_id() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    COUNTER.fetch_add(1, Ordering::SeqCst)
+}
+
+/// Check if any swarm members need draining before reload
+async fn check_swarm_needs_drain(
+    swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
+) -> bool {
+    let members = swarm_members.read().await;
+    members
+        .iter()
+        .any(|(_, member)| member.status == "running")
+}
+
+/// Drain swarm members before reload by notifying coordinator
+/// Returns the list of sessions that were drained and those that failed
+async fn drain_swarm_members(
+    swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
+    swarm_event_tx: &broadcast::Sender<SwarmEvent>,
+    timeout: Duration,
+) -> (Vec<String>, Vec<String>) {
+    let mut drained = Vec::new();
+    let mut failed = Vec::new();
+
+    let drain_timeout_secs = timeout.as_secs() as u64;
+
+    // Identify coordinators and agent sessions
+    let running_members: Vec<(String, String, Option<String>, Option<String>)> = {
+        let members = swarm_members.read().await;
+        members
+            .iter()
+            .filter(|(_, m)| m.status == "running")
+            .map(|(session_id, m)| {
+                (
+                    session_id.clone(),
+                    m.role.clone(),
+                    m.friendly_name.clone(),
+                    m.swarm_id.clone(),
+                )
+            })
+            .collect()
+    };
+
+    let coordinators: Vec<_> = running_members
+        .iter()
+        .filter(|(_, role, _, _)| role == "coordinator")
+        .collect();
+    let agents: Vec<_> = running_members
+        .iter()
+        .filter(|(_, role, _, _)| role != "coordinator")
+        .collect();
+
+    // Notify all coordinators about reload
+    for (session_id, _, friendly_name, swarm_id) in &coordinators {
+        let event = SwarmEvent {
+            id: next_event_id(),
+            session_id: session_id.clone(),
+            session_name: friendly_name.clone(),
+            swarm_id: swarm_id.clone(),
+            event: SwarmEventType::ReloadRequested {
+                timeout_secs: drain_timeout_secs,
+                is_manual: true,
+            },
+            timestamp: Instant::now(),
+            absolute_time: std::time::SystemTime::now(),
+        };
+        let _ = swarm_event_tx.send(event);
+    }
+
+    // Also notify agents so they can report completion before shutdown
+    for (session_id, _, friendly_name, swarm_id) in &agents {
+        let event = SwarmEvent {
+            id: next_event_id(),
+            session_id: session_id.clone(),
+            session_name: friendly_name.clone(),
+            swarm_id: swarm_id.clone(),
+            event: SwarmEventType::ReloadRequested {
+                timeout_secs: drain_timeout_secs,
+                is_manual: true,
+            },
+            timestamp: Instant::now(),
+            absolute_time: std::time::SystemTime::now(),
+        };
+        let _ = swarm_event_tx.send(event);
+    }
+
+    crate::logging::info(&format!(
+        "Server: notified {} coordinator(s) and {} agent(s) for drain, timeout={}s",
+        coordinators.len(),
+        agents.len(),
+        drain_timeout_secs
+    ));
+
+    // Wait for sessions to drain (check via swarm status)
+    let deadline = Instant::now() + timeout;
+    let mut event_rx = swarm_event_tx.subscribe();
+
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            // Timeout - collect remaining running sessions as failed
+            let members = swarm_members.read().await;
+            for (session_id, _member) in members.iter().filter(|(_, m)| m.status == "running") {
+                failed.push(session_id.clone());
+                crate::logging::warn(&format!(
+                    "Server: swarm drain timed out for session {}",
+                    session_id
+                ));
+            }
+            break;
+        }
+
+        // Check if all agents have completed
+        let all_drained = {
+            let members = swarm_members.read().await;
+            members
+                .iter()
+                .filter(|(_, m)| m.role != "coordinator")
+                .all(|(_, m)| !matches!(m.status.as_str(), "running" | "running_stale"))
+        };
+
+        if all_drained {
+            let members = swarm_members.read().await;
+            for (session_id, _member) in members.iter().filter(|(_, m)| m.role != "coordinator") {
+                drained.push(session_id.clone());
+            }
+            crate::logging::info(&format!(
+                "Server: all swarm agents drained in {}ms",
+                timeout.as_millis() - remaining.as_millis()
+            ));
+            break;
+        }
+
+        // Wait for status change events or timeout
+        match tokio::time::timeout(remaining, event_rx.recv()).await {
+            Ok(Ok(event)) => {
+                match &event.event {
+                    SwarmEventType::StatusChange { new_status, .. } => {
+                        if !matches!(new_status.as_str(), "running" | "running_stale") {
+                            drained.push(event.session_id.clone());
+                        }
+                    }
+                    SwarmEventType::ReloadReady { drained_sessions, failed_sessions } => {
+                        drained.extend(drained_sessions.clone());
+                        failed.extend(failed_sessions.clone());
+                        break;
+                    }
+                    SwarmEventType::MemberChange { action } if action == "left" => {
+                        drained.push(event.session_id.clone());
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Err(_)) => break, // Channel closed
+            Err(_) => {
+                // Timeout - collect remaining running sessions as failed
+                let members = swarm_members.read().await;
+                for (session_id, _member) in members.iter().filter(|(_, m)| m.status == "running") {
+                    failed.push(session_id.clone());
+                }
+                break;
+            }
+        }
+    }
+
+    (drained, failed)
+}
 
 fn prepare_server_exec(cmd: &mut std::process::Command, socket_path: &std::path::Path) {
     // The replacement daemon must own the published socket paths. Unlink them
@@ -95,6 +267,21 @@ pub(super) async fn await_reload_signal(
             signal.triggering_session.as_deref(),
         )
         .await;
+
+        // NEW: Drain swarm members before graceful shutdown
+        if check_swarm_needs_drain(&swarm_members).await {
+            crate::logging::info(
+                "Server: swarm members detected, initiating drain phase before reload",
+            );
+            let (drained, failed) =
+                drain_swarm_members(&swarm_members, &swarm_event_tx, DEFAULT_SWARM_DRAIN_TIMEOUT)
+                    .await;
+            crate::logging::info(&format!(
+                "Server: swarm drain complete drained={} failed={}",
+                drained.len(),
+                failed.len()
+            ));
+        }
 
         graceful_shutdown_sessions(
             &sessions,

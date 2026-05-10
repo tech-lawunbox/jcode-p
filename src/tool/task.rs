@@ -491,6 +491,7 @@ mod tests {
             model: None,
             session_id: None,
             output_mode: SubagentOutputMode::Answer,
+            run_in_background: false,
             _command: None,
         };
 

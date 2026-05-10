@@ -52,7 +52,7 @@ fn canonicalize_or(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
-pub(crate) fn git_common_dir_for(path: &Path) -> Option<PathBuf> {
+pub fn git_common_dir_for(path: &Path) -> Option<PathBuf> {
     let mut current = Some(path);
     while let Some(dir) = current {
         let dotgit = dir.join(".git");

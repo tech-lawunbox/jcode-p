@@ -869,6 +869,7 @@ pub(super) async fn run_swarm_task(
         Some(format!("{} (@{} swarm)", description, subagent_type)),
     );
     session.model = Some(coordinator_model);
+    session.swarm_id = agent.lock().await.swarm_id().map(|s| s.to_string());
     if let Some(dir) = working_dir {
         session.working_dir = Some(dir.display().to_string());
     }

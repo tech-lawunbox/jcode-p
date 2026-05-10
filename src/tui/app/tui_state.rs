@@ -1278,3 +1278,38 @@ impl crate::tui::TuiState for App {
         })
     }
 }
+
+// Extension methods for App (beyond TuiState trait)
+impl App {
+    /// Check if auto-server-reload should be blocked due to active swarm
+    pub(crate) fn swarm_reload_should_block(&self) -> bool {
+        // Block if in remote mode with active swarm members
+        if !self.is_remote {
+            return false;
+        }
+
+        // Check if any swarm members are actively running (not ready/completed/failed/stopped)
+        if !self.remote_swarm_members.is_empty() {
+            let active_count = self
+                .remote_swarm_members
+                .iter()
+                .filter(|m| {
+                    matches!(
+                        m.status.as_str(),
+                        "running" | "running_stale" | "thinking" | "waiting_network" | "processing"
+                    )
+                })
+                .count();
+            if active_count > 0 {
+                return true;
+            }
+        }
+
+        // Also block if swarm is enabled and we have multiple sessions
+        if self.swarm_enabled && self.remote_sessions.len() > 1 {
+            return true;
+        }
+
+        false
+    }
+}

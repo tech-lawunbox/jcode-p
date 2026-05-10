@@ -1131,11 +1131,15 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
 }
 
 pub(crate) fn subscribe_metadata() -> (Option<String>, Option<bool>) {
-    let working_dir = std::env::current_dir().ok();
-    let working_dir_str = working_dir.as_ref().map(|p| p.display().to_string());
+    let cwd = std::env::current_dir().ok();
+    // Auto-detect project root from git repo using existing logic
+    let project_dir = cwd.as_ref().and_then(|dir| {
+        crate::server::git_common_dir_for(dir).or_else(|| Some(dir.clone()))
+    });
+    let working_dir_str = project_dir.as_ref().map(|p| p.display().to_string());
 
     let mut selfdev = crate::cli::selfdev::client_selfdev_requested();
-    if !selfdev && let Some(ref dir) = working_dir {
+    if !selfdev && let Some(ref dir) = project_dir {
         let mut current = Some(dir.as_path());
         while let Some(path) = current {
             if crate::build::is_jcode_repo(path) {

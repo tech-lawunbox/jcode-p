@@ -272,6 +272,20 @@ pub enum SwarmEventType {
     MemberChange {
         action: String, // "joined" or "left"
     },
+    /// Server reload requested - coordinator should drain swarm members
+    ReloadRequested {
+        /// How long the coordinator has to drain before reload proceeds
+        timeout_secs: u64,
+        /// Whether this is a manual /reload or auto-reload
+        is_manual: bool,
+    },
+    /// Coordinator signals that swarm has been drained and reload can proceed
+    ReloadReady {
+        /// Session IDs that were drained successfully
+        drained_sessions: Vec<String>,
+        /// Session IDs that failed to drain (timed out)
+        failed_sessions: Vec<String>,
+    },
 }
 
 /// A swarm event with metadata
