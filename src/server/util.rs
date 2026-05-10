@@ -57,7 +57,8 @@ pub fn git_common_dir_for(path: &Path) -> Option<PathBuf> {
     while let Some(dir) = current {
         let dotgit = dir.join(".git");
         if dotgit.is_dir() {
-            return Some(canonicalize_or(dotgit));
+            // Return the project root (parent of .git), not .git itself
+            return Some(canonicalize_or(dir.to_path_buf()));
         }
         if dotgit.is_file() {
             let content = std::fs::read_to_string(&dotgit).ok()?;
@@ -84,7 +85,8 @@ pub fn git_common_dir_for(path: &Path) -> Option<PathBuf> {
             {
                 return Some(canonicalize_or(common.to_path_buf()));
             }
-            return Some(gitdir);
+            // For gitfile case, return the directory containing the gitfile (project root)
+            return Some(canonicalize_or(dir.to_path_buf()));
         }
         current = dir.parent();
     }
