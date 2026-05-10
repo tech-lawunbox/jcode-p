@@ -31,6 +31,7 @@ const SPAWN_COORDINATOR_DENIAL: &str = "Only the coordinator can spawn new agent
 fn resolve_working_dir(params_working_dir: &Option<String>, ctx: &ToolContext) -> Option<String> {
     params_working_dir
         .clone()
+        .filter(|dir| !dir.trim().is_empty())
         .or_else(|| ctx.working_dir.as_ref().map(|p| p.display().to_string()))
 }
 
@@ -2270,8 +2271,10 @@ impl Tool for CommunicateTool {
             "await_members" => {
                 let auto_cleanup = params.auto_cleanup.unwrap_or(false);
                 let run_id = params.run_id.clone();
-                
-                let target_status = params.target_status.clone()
+
+                let target_status = params
+                    .target_status
+                    .clone()
                     .unwrap_or_else(default_await_target_statuses);
                 let mut session_ids = params.session_ids.clone().unwrap_or_default();
                 if let Some(target_session) = params.target_session.clone()
@@ -2307,17 +2310,20 @@ impl Tool for CommunicateTool {
                         let output = format_awaited_members_with_reports(
                             completed, &summary, &members, &reports,
                         );
-                        
+
                         // Auto-cleanup workers after successful await if requested
                         if completed && auto_cleanup {
-                            let cleanup_result = cleanup_swarm_workers_with_run_id(
-                                &ctx, &params, run_id.as_deref()
-                            ).await;
+                            let cleanup_result =
+                                cleanup_swarm_workers_with_run_id(&ctx, &params, run_id.as_deref())
+                                    .await;
                             if let Ok(cleanup_msg) = cleanup_result {
-                                return Ok(ToolOutput::new(format!("{}\n\n{}", output.output, cleanup_msg)));
+                                return Ok(ToolOutput::new(format!(
+                                    "{}\n\n{}",
+                                    output.output, cleanup_msg
+                                )));
                             }
                         }
-                        
+
                         Ok(output)
                     }
                     Ok(response) => {

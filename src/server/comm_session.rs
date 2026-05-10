@@ -30,12 +30,15 @@ fn create_visible_spawn_session(
     selfdev_requested: bool,
 ) -> anyhow::Result<(String, PathBuf)> {
     let cwd = working_dir
+        .filter(|dir| !dir.trim().is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| anyhow::anyhow!(
-            "Cannot spawn visible session: no working directory resolved. \
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Cannot spawn visible session: no working directory resolved. \
              The coordinator's working_dir was not available via the spawn request \
              or server-side fallback."
-        ))?;
+            )
+        })?;
 
     let mut session = Session::create(None, None);
     session.working_dir = Some(cwd.display().to_string());
@@ -297,7 +300,8 @@ pub(super) async fn spawn_swarm_agent(
     // rather than falling back to a stale SwarmMember.working_dir or process cwd.
     let coordinator_working_dir = {
         let sessions_guard = sessions.read().await;
-        let result = sessions_guard.get(req_session_id)
+        let result = sessions_guard
+            .get(req_session_id)
             .and_then(|agent| agent.try_lock().ok())
             .and_then(|guard| guard.working_dir().map(String::from));
         if result.is_none() && sessions_guard.contains_key(req_session_id) {
@@ -308,8 +312,18 @@ pub(super) async fn spawn_swarm_agent(
         }
         result
     };
-    let resolved_working_dir =
-        resolve_spawn_working_dir(working_dir.or(coordinator_working_dir), req_session_id, sessions, swarm_members).await;
+    let resolved_working_dir = resolve_spawn_working_dir(
+        working_dir.or(coordinator_working_dir),
+        req_session_id,
+        sessions,
+        swarm_members,
+    )
+    .await
+    .filter(|dir| !dir.trim().is_empty())
+    .ok_or_else(|| anyhow::anyhow!(
+        "Cannot spawn swarm agent: no working directory resolved for coordinator {req_session_id}. \
+         Spawn requests must carry the coordinator working_dir; refusing to fall back to the server process cwd."
+    ))?;
     let coordinator_model = {
         let agent_sessions = sessions.read().await;
         agent_sessions.get(req_session_id).and_then(|agent| {
@@ -342,7 +356,7 @@ pub(super) async fn spawn_swarm_agent(
         .map(append_swarm_completion_report_instructions);
 
     let visible_spawn = prepare_visible_spawn_session(
-        resolved_working_dir.as_deref(),
+        Some(resolved_working_dir.as_str()),
         spawn_model.as_deref(),
         coordinator_is_canary,
         startup_message.as_deref(),
@@ -352,11 +366,9 @@ pub(super) async fn spawn_swarm_agent(
     let (new_session_id, is_headless_fallback) = match visible_spawn {
         Ok((new_session_id, true)) => Ok((new_session_id, false)),
         Ok((_, false)) | Err(_) => {
-            let cmd = match (&resolved_working_dir, &explicit_swarm_id) {
-                (Some(dir), Some(sid)) => format!("create_session:{dir}|{sid}"),
-                (Some(dir), None) => format!("create_session:{dir}"),
-                (None, Some(sid)) => format!("create_session|{sid}"),
-                (None, None) => "create_session".to_string(),
+            let cmd = match &explicit_swarm_id {
+                Some(sid) => format!("create_session:{resolved_working_dir}|{sid}"),
+                None => format!("create_session:{resolved_working_dir}"),
             };
             create_headless_session(
                 sessions,
@@ -413,7 +425,7 @@ pub(super) async fn spawn_swarm_agent(
         register_visible_spawned_member(
             &new_session_id,
             swarm_id,
-            resolved_working_dir.as_deref(),
+            Some(resolved_working_dir.as_str()),
             startup_message.is_some(),
             Some(req_session_id),
             run_id.as_deref(),

@@ -4,7 +4,7 @@ use super::{
     format_awaited_members_with_reports, format_cleanup_dry_run, format_members,
     format_members_for_run, format_plan_status, format_swarm_health, format_swarm_health_for_run,
     format_swarm_reconcile, latest_assistant_report, resolve_optional_target_session,
-    spawn_requires_coordinator, spawn_self_promote_failure_message,
+    resolve_working_dir, spawn_requires_coordinator, spawn_self_promote_failure_message,
 };
 use crate::message::{Message, StreamEvent, ToolDefinition};
 use crate::protocol::{
@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::json;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -28,6 +28,31 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[test]
 fn tool_is_named_swarm() {
     assert_eq!(CommunicateTool::new().name(), "swarm");
+}
+
+#[test]
+fn resolve_working_dir_ignores_blank_param_and_uses_context() {
+    let context_dir = PathBuf::from("/tmp/context-worktree");
+    let ctx = ToolContext {
+        session_id: "session-1".to_string(),
+        message_id: "msg-1".to_string(),
+        tool_call_id: "call-1".to_string(),
+        working_dir: Some(context_dir.clone()),
+        stdin_request_tx: None,
+        graceful_shutdown_signal: None,
+        execution_mode: ToolExecutionMode::Direct,
+        swarm_id: None,
+    };
+
+    let expected_context_dir = context_dir.display().to_string();
+    assert_eq!(
+        resolve_working_dir(&Some("   ".to_string()), &ctx).as_deref(),
+        Some(expected_context_dir.as_str())
+    );
+    assert_eq!(
+        resolve_working_dir(&Some("/tmp/explicit-worktree".to_string()), &ctx).as_deref(),
+        Some("/tmp/explicit-worktree")
+    );
 }
 
 #[test]

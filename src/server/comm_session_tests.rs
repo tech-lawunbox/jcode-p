@@ -284,6 +284,26 @@ async fn register_visible_spawned_member_marks_startup_as_running() {
 }
 
 #[test]
+fn prepare_visible_spawn_session_rejects_missing_or_blank_working_dir() {
+    let missing = prepare_visible_spawn_session(None, None, false, None, |_session_id, _cwd, _| {
+        panic!("launcher must not run without a working directory")
+    })
+    .expect_err("missing working_dir should fail before launch");
+    assert!(
+        missing
+            .to_string()
+            .contains("no working directory resolved")
+    );
+
+    let blank =
+        prepare_visible_spawn_session(Some("   "), None, false, None, |_session_id, _cwd, _| {
+            panic!("launcher must not run with a blank working directory")
+        })
+        .expect_err("blank working_dir should fail before launch");
+    assert!(blank.to_string().contains("no working directory resolved"));
+}
+
+#[test]
 fn prepare_visible_spawn_session_persists_startup_before_launch() {
     let _guard = crate::storage::lock_test_env();
     let temp_home = tempfile::TempDir::new().expect("temp home");
