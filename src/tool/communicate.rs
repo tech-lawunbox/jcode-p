@@ -1266,7 +1266,13 @@ impl Tool for CommunicateTool {
         - Assign: `swarm assign_task task_id=X target_session=Y` (assigns plan item)\n\
         - Wait: `swarm await_members timeout_minutes=5` (waits for workers to complete)\n\
         - List: `swarm list` (see all swarm members and their status)\n\
+        - Plan: `swarm propose_plan` / `swarm approve_plan` / `swarm reject_plan` (task planning)\n\
         - Report: `swarm report message=\"...\" status=ready` (worker submits completion)\n\
+        - Communicate: `swarm dm to_session=X message=\"...\"` / `swarm broadcast channel=X message=Y`\n\
+        - Retrieve: `swarm summary target_session=X` / `swarm read_context target_session=X`\n\
+        - Status: `swarm plan_status` / `swarm status` / `swarm health`\n\
+        - Control: `swarm stop` / `swarm cleanup` / `swarm fill_slots concurrency_limit=N`\n\
+        - Lifecycle: `swarm start` / `swarm wake` / `swarm resume` / `swarm retry`\n\
         Workers automatically report back to coordinator when done. Use run_id to group related tasks."
     }
 
