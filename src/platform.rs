@@ -241,18 +241,30 @@ pub fn atomic_symlink_swap(src: &Path, dst: &Path, temp: &Path) -> std::io::Resu
 /// This is used for launching new terminal windows (for `/resume`, `/split`,
 /// crash restore, etc.) so the new client survives if the invoking jcode
 /// process exits or its terminal closes.
+///
+/// Note: When running inside tmux, we skip `setsid()` because tmux needs to
+/// control the process to create panes. Calling `setsid()` creates a new
+/// session that tmux cannot attach to, causing it to fall back to creating
+/// new windows instead of panes.
 pub fn spawn_detached(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
 
-        unsafe {
-            cmd.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
+        // Skip setsid when in tmux - tmux needs to control the process to create panes.
+        // When setsid() is called, the child becomes a session leader of a new session
+        // that tmux cannot attach to, causing tmux to create a new window instead of a pane.
+        let in_tmux = std::env::var("TMUX").is_ok();
+
+        if !in_tmux {
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
         }
     }
 
