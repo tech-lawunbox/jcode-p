@@ -1132,21 +1132,24 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
 
 pub(crate) fn subscribe_metadata() -> (Option<String>, Option<bool>) {
     let cwd = std::env::current_dir().ok();
-    // Auto-detect project root from git repo using existing logic
-    let project_dir = cwd.as_ref().and_then(|dir| {
-        crate::server::git_common_dir_for(dir).or_else(|| Some(dir.clone()))
-    });
-    let working_dir_str = project_dir.as_ref().map(|p| p.display().to_string());
+    let working_dir_str = cwd.as_ref().map(|p| p.display().to_string());
 
     let mut selfdev = crate::cli::selfdev::client_selfdev_requested();
-    if !selfdev && let Some(ref dir) = project_dir {
-        let mut current = Some(dir.as_path());
-        while let Some(path) = current {
-            if crate::build::is_jcode_repo(path) {
-                selfdev = true;
-                break;
+    if !selfdev {
+        // Project root detection is only for selfdev / jcode-repo checks,
+        // NOT for the session working directory — swarm agents inherit that.
+        let project_dir = cwd.as_ref().and_then(|dir| {
+            crate::server::git_common_dir_for(dir).or_else(|| Some(dir.clone()))
+        });
+        if let Some(ref dir) = project_dir {
+            let mut current = Some(dir.as_path());
+            while let Some(path) = current {
+                if crate::build::is_jcode_repo(path) {
+                    selfdev = true;
+                    break;
+                }
+                current = path.parent();
             }
-            current = path.parent();
         }
     }
 
