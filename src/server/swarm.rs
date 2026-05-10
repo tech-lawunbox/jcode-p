@@ -849,43 +849,39 @@ pub(super) async fn update_member_status_with_report(
                         }
                     }
                 }
-            }
 
-            // Auto-cleanup: close spawned worker after it reports completion to coordinator
-            if stop_worker_on_completion.unwrap_or(false)
-                && status == "ready"
-                && report_back_to_session_id.is_some()
-                && swarm_id.is_some()
-            {
-                // Send SessionCloseRequested to terminate the spawned agent's process
-                let _ = fanout_session_event(
-                    swarm_members,
-                    session_id,
-                    ServerEvent::SessionCloseRequested {
-                        reason: "Worker completed and reported back to coordinator".to_string(),
-                    },
-                )
-                .await;
-
-                // Remove from session tracking
-                if let Some(sessions) = sessions {
-                    sessions.write().await.remove(session_id);
-                }
-
-                // Clean up swarm member tracking
-                let target_session = session_id.to_string();
-                let coordinator = report_back_to_session_id.clone();
-                let members = Arc::clone(swarm_members);
-                let by_id = Arc::clone(swarms_by_id);
-                tokio::spawn(async move {
-                    super::comm_session::cleanup_swarm_worker_session(
-                        &target_session,
-                        coordinator.as_deref(),
-                        &members,
-                        &by_id,
+                // Auto-cleanup: close worker now that coordinator has received the report
+                if stop_worker_on_completion.unwrap_or(true)
+                    && status == "ready"
+                    && swarm_id.is_some()
+                {
+                    let _ = fanout_session_event(
+                        swarm_members,
+                        session_id,
+                        ServerEvent::SessionCloseRequested {
+                            reason: "Worker completed and reported back to coordinator".to_string(),
+                        },
                     )
                     .await;
-                });
+
+                    if let Some(sessions) = sessions {
+                        sessions.write().await.remove(session_id);
+                    }
+
+                    let target_session = session_id.to_string();
+                    let coordinator = report_back_to_session_id.clone();
+                    let members = Arc::clone(swarm_members);
+                    let by_id = Arc::clone(swarms_by_id);
+                    tokio::spawn(async move {
+                        super::comm_session::cleanup_swarm_worker_session(
+                            &target_session,
+                            coordinator.as_deref(),
+                            &members,
+                            &by_id,
+                        )
+                        .await;
+                    });
+                }
             }
         }
     }

@@ -100,6 +100,15 @@ fn macos_should_try_app_terminal(term: &str) -> bool {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn running_inside_ghostty() -> bool {
+    std::env::var("TERM_PROGRAM")
+        .ok()
+        .map(|v| v.eq_ignore_ascii_case("ghostty"))
+        .unwrap_or(false)
+        || std::env::var("GHOSTTY_RESOURCES_DIR").is_ok()
+}
+
 #[cfg(unix)]
 pub fn detected_resume_terminal() -> Option<String> {
     if std::env::var("HANDTERM_SESSION").is_ok() || std::env::var("HANDTERM_PID").is_ok() {
@@ -270,6 +279,30 @@ fn build_spawn_command(term: &str, command: &TerminalCommand, cwd: &Path) -> Opt
         "handterm" => {
             let shell = shell_command(&command_parts(command));
             cmd.args(["--backend", "gpu", "--exec", &shell]);
+        }
+        #[cfg(target_os = "macos")]
+        "ghostty" if running_inside_ghostty() => {
+            let shell = shell_command(&command_parts(command));
+            let cwd_str = cwd.display().to_string();
+            let cwd_escaped = cwd_str.replace('\\', "\\\\").replace('"', "\\\"");
+            let shell_escaped = shell.replace('\\', "\\\\").replace('"', "\\\"");
+            let script = format!(
+                r#"tell application "Ghostty"
+    set cfg to new surface configuration
+    set initial working directory of cfg to "{cwd_escaped}"
+    set command of cfg to "/bin/bash"
+    set currentTerm to focused terminal of selected tab of front window
+    set newPane to split currentTerm direction right with configuration cfg
+    delay 0.5
+    input text "exec {shell_escaped}" to newPane
+    send key "enter" to newPane
+end tell"#
+            );
+            cmd = Command::new("osascript");
+            cmd.args(["-e", &script]);
+            if command.fresh_spawn {
+                cmd.env("JCODE_FRESH_SPAWN", "1");
+            }
         }
         #[cfg(target_os = "macos")]
         "ghostty" => {

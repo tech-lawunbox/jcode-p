@@ -1103,7 +1103,7 @@ pub(super) async fn handle_client(
                                     Some(&event_counter),
                                     Some(&swarm_event_tx),
                                     Some(&sessions),
-                                    Some(true), // stop_worker_on_completion - close worker after it reports back
+                                    None, // stop_worker_on_completion - coordinator closes on notification delivery
                                 )
                                 .await;
                             }
