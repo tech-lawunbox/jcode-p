@@ -31,7 +31,11 @@ fn create_visible_spawn_session(
 ) -> anyhow::Result<(String, PathBuf)> {
     let cwd = working_dir
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        .ok_or_else(|| anyhow::anyhow!(
+            "Cannot spawn visible session: no working directory resolved. \
+             The coordinator's working_dir was not available via the spawn request \
+             or server-side fallback."
+        ))?;
 
     let mut session = Session::create(None, None);
     session.working_dir = Some(cwd.display().to_string());
@@ -61,12 +65,19 @@ async fn resolve_spawn_working_dir(
 
     if let Some(agent_dir) = {
         let agent_sessions = sessions.read().await;
-        agent_sessions.get(req_session_id).and_then(|agent| {
+        let lock_result = agent_sessions.get(req_session_id).and_then(|agent| {
             agent
                 .try_lock()
                 .ok()
                 .and_then(|agent_guard| agent_guard.working_dir().map(str::to_string))
-        })
+        });
+        if lock_result.is_none() && agent_sessions.contains_key(req_session_id) {
+            crate::logging::warn(&format!(
+                "resolve_spawn_working_dir: try_lock failed for session {}; falling back to SwarmMember.working_dir",
+                req_session_id
+            ));
+        }
+        lock_result
     } && !agent_dir.trim().is_empty()
     {
         return Some(agent_dir);
@@ -286,9 +297,16 @@ pub(super) async fn spawn_swarm_agent(
     // rather than falling back to a stale SwarmMember.working_dir or process cwd.
     let coordinator_working_dir = {
         let sessions_guard = sessions.read().await;
-        sessions_guard.get(req_session_id)
+        let result = sessions_guard.get(req_session_id)
             .and_then(|agent| agent.try_lock().ok())
-            .and_then(|guard| guard.working_dir().map(String::from))
+            .and_then(|guard| guard.working_dir().map(String::from));
+        if result.is_none() && sessions_guard.contains_key(req_session_id) {
+            crate::logging::warn(&format!(
+                "spawn_swarm_agent: try_lock failed for coordinator {}; working_dir will use request param or SwarmMember fallback",
+                req_session_id
+            ));
+        }
+        result
     };
     let resolved_working_dir =
         resolve_spawn_working_dir(working_dir.or(coordinator_working_dir), req_session_id, sessions, swarm_members).await;

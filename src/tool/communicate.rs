@@ -23,6 +23,17 @@ use std::path::Path;
 const REQUEST_ID: u64 = 1;
 const SPAWN_COORDINATOR_DENIAL: &str = "Only the coordinator can spawn new agents";
 
+/// Resolve working_dir for spawn/assign requests: prefer explicit param, fall back to ToolContext.
+///
+/// The server-side `try_lock()` fallback for reading the coordinator's working_dir
+/// fails when the coordinator agent mutex is held during tool execution (which is
+/// always the case during a spawn). Injecting it here avoids that race entirely.
+fn resolve_working_dir(params_working_dir: &Option<String>, ctx: &ToolContext) -> Option<String> {
+    params_working_dir
+        .clone()
+        .or_else(|| ctx.working_dir.as_ref().map(|p| p.display().to_string()))
+}
+
 mod transport;
 use transport::{send_request, send_request_with_timeout};
 
@@ -440,7 +451,7 @@ async fn run_swarm_plan_to_terminal(
                 id: REQUEST_ID,
                 session_id: ctx.session_id.clone(),
                 target_session: params.target_session.clone(),
-                working_dir: params.working_dir.clone(),
+                working_dir: resolve_working_dir(&params.working_dir, &ctx),
                 prefer_spawn: params.prefer_spawn,
                 spawn_if_needed,
                 message: params.message.clone(),
@@ -499,7 +510,7 @@ async fn spawn_assignment_session(
     let spawn_request = Request::CommSpawn {
         id: REQUEST_ID,
         session_id: ctx.session_id.clone(),
-        working_dir: params.working_dir.clone(),
+        working_dir: resolve_working_dir(&params.working_dir, ctx),
         initial_message: None,
         request_nonce: Some(spawn_request_nonce(ctx, params.operation_id.as_deref())),
         run_id,
@@ -1731,7 +1742,7 @@ impl Tool for CommunicateTool {
                 let request = Request::CommSpawn {
                     id: REQUEST_ID,
                     session_id: ctx.session_id.clone(),
-                    working_dir: params.working_dir.clone(),
+                    working_dir: resolve_working_dir(&params.working_dir, &ctx),
                     initial_message: params.spawn_initial_message(),
                     request_nonce: Some(spawn_request_nonce(&ctx, params.operation_id.as_deref())),
                     run_id: params
@@ -2027,7 +2038,7 @@ impl Tool for CommunicateTool {
                     id: REQUEST_ID,
                     session_id: ctx.session_id.clone(),
                     target_session: params.target_session.clone(),
-                    working_dir: params.working_dir.clone(),
+                    working_dir: resolve_working_dir(&params.working_dir, &ctx),
                     prefer_spawn: params.prefer_spawn,
                     spawn_if_needed: params.spawn_if_needed,
                     message: params.message.clone(),
@@ -2084,7 +2095,7 @@ impl Tool for CommunicateTool {
                         id: REQUEST_ID,
                         session_id: ctx.session_id.clone(),
                         target_session: params.target_session.clone(),
-                        working_dir: params.working_dir.clone(),
+                        working_dir: resolve_working_dir(&params.working_dir, &ctx),
                         prefer_spawn: params.prefer_spawn,
                         spawn_if_needed: params.spawn_if_needed,
                         message: params.message.clone(),
