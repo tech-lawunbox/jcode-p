@@ -291,8 +291,13 @@ fn build_spawn_command(term: &str, command: &TerminalCommand, cwd: &Path) -> Opt
     set cfg to new surface configuration
     set initial working directory of cfg to "{cwd_escaped}"
     set command of cfg to "/bin/bash"
-    set currentTerm to focused terminal of selected tab of front window
-    set newPane to split currentTerm direction right with configuration cfg
+    
+    -- Get the rightmost pane of current layout to stack splits vertically
+    set paneCount to count of panes of front window
+    set rightPane to pane paneCount of front window
+    
+    -- Split from rightmost pane (vertical stack on right side)
+    set newPane to split rightPane direction right with configuration cfg
     delay 0.5
     input text "exec {shell_escaped}" to newPane
     send key "enter" to newPane
