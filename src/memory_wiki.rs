@@ -195,10 +195,7 @@ pub fn status(working_dir: Option<&Path>) -> Result<WikiStatus> {
 }
 
 pub fn build_prompt(working_dir: Option<&Path>, max_chars: usize) -> Result<Option<String>> {
-    let root = current_root(working_dir)?;
-    if !root.exists() {
-        return Ok(None);
-    }
+    let root = ensure_layout(working_dir)?;
 
     let mut sections = Vec::new();
     sections.push(format!("# Jcode Living Memory\n\n{}", SCHEMA_SUMMARY));
@@ -228,10 +225,7 @@ pub fn build_prompt(working_dir: Option<&Path>, max_chars: usize) -> Result<Opti
 }
 
 pub fn search(query: &str, working_dir: Option<&Path>) -> Result<Vec<(PathBuf, String)>> {
-    let root = current_root(working_dir)?;
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
+    let root = ensure_layout(working_dir)?;
     let needle = query.to_lowercase();
     let mut hits = Vec::new();
     search_dir(&root, &root, &needle, &mut hits)?;
