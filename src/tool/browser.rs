@@ -18,7 +18,7 @@ impl BrowserTool {
 }
 
 fn browser_tool_description_text() -> &'static str {
-    "Control the browser. Use action='status' to check whether the browser bridge is ready. Use action='setup' only for first-time install or repair when status shows the bridge is not already ready. Do not run setup before every browser task."
+    "Control the browser. Use action='status' to check whether the browser bridge is ready. Use action='setup' only for first-time install or repair when status shows the bridge is not already ready. Do not run setup before every browser task. To fetch a known URL, prefer webfetch. To search, prefer websearch."
 }
 
 #[derive(Debug, Deserialize)]
@@ -208,27 +208,27 @@ impl Tool for BrowserTool {
             }),
         );
         for (name, schema) in [
-            ("url", json!({"type": "string"})),
-            ("tab_id", json!({"type": "integer"})),
-            ("frame_id", json!({"type": "integer"})),
-            ("all_frames", json!({"type": "boolean"})),
-            ("selector", json!({"type": "string"})),
-            ("text", json!({"type": "string"})),
-            ("contains", json!({"type": "string"})),
-            ("script", json!({"type": "string"})),
-            ("key", json!({"type": "string"})),
-            ("x", json!({"type": "number"})),
-            ("y", json!({"type": "number"})),
-            ("wait", json!({"type": "boolean"})),
-            ("new_tab", json!({"type": "boolean"})),
-            ("focus", json!({"type": "boolean"})),
-            ("clear", json!({"type": "boolean"})),
-            ("submit", json!({"type": "boolean"})),
-            ("page_world", json!({"type": "boolean"})),
-            ("position", json!({"type": "string"})),
-            ("behavior", json!({"type": "string"})),
-            ("timeout_ms", json!({"type": "integer"})),
-            ("path", json!({"type": "string"})),
+            ("url", json!({"type": "string", "description": "URL to navigate to."})),
+            ("tab_id", json!({"type": "integer", "description": "Tab ID for tab operations."})),
+            ("frame_id", json!({"type": "integer", "description": "Frame ID for frame-scoped actions."})),
+            ("all_frames", json!({"type": "boolean", "description": "Apply action to all frames."})),
+            ("selector", json!({"type": "string", "description": "CSS selector for element targeting."})),
+            ("text", json!({"type": "string", "description": "Text to type or match."})),
+            ("contains", json!({"type": "string", "description": "Text contains filter for element lookup."})),
+            ("script", json!({"type": "string", "description": "JavaScript to evaluate."})),
+            ("key", json!({"type": "string", "description": "Keyboard key to press (e.g. Enter, Tab)."})),
+            ("x", json!({"type": "number", "description": "X coordinate for click/scroll."})),
+            ("y", json!({"type": "number", "description": "Y coordinate for click/scroll."})),
+            ("wait", json!({"type": "boolean", "description": "Whether to wait for the action to complete."})),
+            ("new_tab", json!({"type": "boolean", "description": "Open result in a new tab."})),
+            ("focus", json!({"type": "boolean", "description": "Focus the element after locating it."})),
+            ("clear", json!({"type": "boolean", "description": "Clear existing content before typing."})),
+            ("submit", json!({"type": "boolean", "description": "Submit the form after filling."})),
+            ("page_world", json!({"type": "boolean", "description": "Execute script in page main world (not isolated)."})),
+            ("position", json!({"type": "string", "description": "Scroll position: start, center, end, nearest."})),
+            ("behavior", json!({"type": "string", "description": "Scroll behavior: smooth, instant."})),
+            ("timeout_ms", json!({"type": "integer", "description": "Timeout in milliseconds."})),
+            ("path", json!({"type": "string", "description": "File path for upload actions."})),
         ] {
             properties.insert(name.into(), schema);
         }

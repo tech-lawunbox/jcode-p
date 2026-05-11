@@ -1292,10 +1292,12 @@ impl Tool for CommunicateTool {
                     "description": "Action. For spawn, prefer including prompt with the initial task so the new agent starts useful work immediately."
                 },
                 "key": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Message key for routing or plan context key for propose_plan/share."
                 },
                 "value": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Message value (stringified JSON) for propose_plan/share."
                 },
                 "message": {
                     "type": "string",
@@ -1321,9 +1323,9 @@ impl Tool for CommunicateTool {
                     "type": "string",
                     "description": "DM target. Accepts an exact session ID or a unique friendly name within the swarm. If a friendly name is ambiguous, run swarm list and use the exact session ID."
                 },
-                "channel": { "type": "string" },
-                "proposer_session": { "type": "string" },
-                "reason": { "type": "string" },
+                "channel": { "type": "string", "description": "Communication channel name for broadcast/subscribe." },
+                "proposer_session": { "type": "string", "description": "Session ID of the agent proposing a plan change." },
+                "reason": { "type": "string", "description": "Reason for propose/reject/reassign actions." },
                 "target_session": { "type": "string" },
                 "role": {
                     "type": "string",
@@ -1410,9 +1412,19 @@ impl Tool for CommunicateTool {
                 },
                 "plan_items": {
                     "type": "array",
+                    "description": "JSON array of plan items proposed for synchronization (propose_plan).",
                     "items": {
                         "type": "object",
-                        "additionalProperties": true
+                        "properties": {
+                            "content": {"type": "string"},
+                            "status": {"type": "string"},
+                            "priority": {"type": "string"},
+                            "id": {"type": "string"},
+                            "subsystem": {"type": "string"},
+                            "file_scope": {"type": "array", "items": {"type": "string"}},
+                            "blocked_by": {"type": "array", "items": {"type": "string"}},
+                            "assigned_to": {"type": "string"}
+                        }
                     }
                 }
             }

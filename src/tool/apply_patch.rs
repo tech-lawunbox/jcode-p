@@ -58,7 +58,7 @@ impl Tool for ApplyPatchTool {
     }
 
     fn description(&self) -> &str {
-        "Apply a Codex-style patch using *** Begin Patch / *** End Patch blocks. Prefer this over patch for Jcode/Codex patches."
+        "Apply a Codex-style patch using *** Begin Patch / *** End Patch blocks. Prefer this over patch for Jcode/Codex patches. For direct text replacement, use edit or multiedit."
     }
 
     fn parameters_schema(&self) -> Value {

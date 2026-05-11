@@ -30,7 +30,7 @@ impl Tool for GlobTool {
     }
 
     fn description(&self) -> &str {
-        "Find files by glob."
+        "Find files by glob pattern. To list directory contents, use ls."
     }
 
     fn parameters_schema(&self) -> Value {

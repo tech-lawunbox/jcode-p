@@ -464,6 +464,12 @@ fn map_memory_subcommand(subcmd: MemoryCommand) -> commands::MemorySubcommand {
         },
         MemoryCommand::Stats => commands::MemorySubcommand::Stats,
         MemoryCommand::ClearTest => commands::MemorySubcommand::ClearTest,
+        MemoryCommand::Clear { scope, category, older_than, dry_run } => {
+            commands::MemorySubcommand::Clear { scope, category, older_than, dry_run }
+        }
+        MemoryCommand::Prune { scope, ttl_days, trust_below, max, dry_run } => {
+            commands::MemorySubcommand::Prune { scope, ttl_days, trust_below, max, dry_run }
+        }
         MemoryCommand::Wiki(subcmd) => commands::MemorySubcommand::Wiki(match subcmd {
             MemoryWikiCommand::Init => commands::MemoryWikiSubcommand::Init,
             MemoryWikiCommand::Status => commands::MemoryWikiSubcommand::Status,

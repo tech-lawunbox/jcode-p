@@ -75,6 +75,9 @@ struct MemoryInput {
     /// For recall action: retrieval mode
     #[serde(default)]
     mode: Option<String>,
+    /// For forget action: bulk delete by IDs (takes precedence over single id)
+    #[serde(default)]
+    ids: Option<Vec<String>>,
 }
 
 #[async_trait]
@@ -84,7 +87,7 @@ impl Tool for MemoryTool {
     }
 
     fn description(&self) -> &str {
-        "Manage memory."
+        "Store and retrieve contextual memories across sessions. Memories persist automatically and can influence future decisions."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -95,20 +98,25 @@ impl Tool for MemoryTool {
                 "action": {
                     "type": "string",
                     "enum": ["remember", "recall", "search", "list", "forget", "tag", "link", "related"],
-                    "description": "Action."
+                    "description": "Memory operation: remember, recall, search, list, forget, tag, link, related."
                 },
-                "content": { "type": "string" },
+                "content": { "type": "string", "description": "Memory content to store (remember) or recall/search query." },
                 "category": {
                     "type": "string",
                     "enum": ["fact", "preference", "entity", "correction"]
                 },
-                "query": { "type": "string" },
-                "id": { "type": "string" },
-                "tags": { "type": "array", "items": { "type": "string" } },
+                "query": { "type": "string", "description": "Search query for recall/search actions." },
+                "id": { "type": "string", "description": "Memory ID for forget/update/link actions." },
+                "tags": { "type": "array", "items": { "type": "string" }, "description": "Tags to filter or tag memories." },
                 "scope": { "type": "string", "enum": ["project", "global", "all"] },
-                "from_id": { "type": "string" },
-                "to_id": { "type": "string" },
-                "limit": { "type": "integer", "description": "Max results." }
+                "from_id": { "type": "string", "description": "Source memory ID for link action." },
+                "to_id": { "type": "string", "description": "Target memory ID for link action." },
+                "limit": { "type": "integer", "description": "Max results." },
+                "ids": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "For forget: bulk-delete by IDs. Takes precedence over id."
+                }
             },
             "required": ["action"]
         })
@@ -311,18 +319,37 @@ impl Tool for MemoryTool {
                 }
             }
             "forget" => {
-                let id = input.id.ok_or_else(|| anyhow::anyhow!("id required"))?;
-                memory::set_state(MemoryState::ToolAction {
-                    action: "forget".into(),
-                    detail: truncate_for_widget(&id, 30),
-                });
-                let found = self.manager.forget(&id)?;
-                memory::add_event(MemoryEventKind::ToolForgot { id: id.clone() });
-                memory::set_state(MemoryState::Idle);
-                if found {
-                    Ok(ToolOutput::new(format!("Forgot: {}", id)))
+                // Bulk delete by IDs takes precedence over single id
+                if let Some(ids) = input.ids {
+                    memory::set_state(MemoryState::ToolAction {
+                        action: "forget".into(),
+                        detail: format!("bulk {} ids", ids.len()),
+                    });
+                    let filter = memory::MemoryFilter { ids: Some(ids.clone()), ..Default::default() };
+                    let result = self.manager.forget_matching(&filter)?;
+                    let total = result.project_removed + result.global_removed;
+                    for id in &ids {
+                        memory::add_event(MemoryEventKind::ToolForgot { id: id.clone() });
+                    }
+                    memory::set_state(MemoryState::Idle);
+                    Ok(ToolOutput::new(format!(
+                        "Forgot {} memory/ies (project: {}, global: {})",
+                        total, result.project_removed, result.global_removed
+                    )))
                 } else {
-                    Ok(ToolOutput::new(format!("Not found: {}", id)))
+                    let id = input.id.ok_or_else(|| anyhow::anyhow!("id or ids required"))?;
+                    memory::set_state(MemoryState::ToolAction {
+                        action: "forget".into(),
+                        detail: truncate_for_widget(&id, 30),
+                    });
+                    let found = self.manager.forget(&id)?;
+                    memory::add_event(MemoryEventKind::ToolForgot { id: id.clone() });
+                    memory::set_state(MemoryState::Idle);
+                    if found {
+                        Ok(ToolOutput::new(format!("Forgot: {}", id)))
+                    } else {
+                        Ok(ToolOutput::new(format!("Not found: {}", id)))
+                    }
                 }
             }
             "tag" => {

@@ -954,6 +954,48 @@ pub(crate) enum MemoryCommand {
     /// Clear test memory storage (used by debug sessions)
     ClearTest,
 
+    /// Clear memories matching criteria (bulk delete)
+    Clear {
+        /// Scope: project, global, or all
+        #[arg(short, long, default_value = "project")]
+        scope: Option<String>,
+
+        /// Category to match (fact, preference, entity, correction)
+        #[arg(short, long)]
+        category: Option<String>,
+
+        /// Delete memories older than N days
+        #[arg(short = 'D', long)]
+        older_than: Option<i64>,
+
+        /// Dry run — show what would be deleted without deleting
+        #[arg(short, long)]
+        dry_run: bool,
+    },
+
+    /// Prune memories by TTL, trust, or quota
+    Prune {
+        /// Scope: project, global, or all
+        #[arg(short, long, default_value = "all")]
+        scope: Option<String>,
+
+        /// Delete memories not updated in N days
+        #[arg(short = 'D', long)]
+        ttl_days: Option<i64>,
+
+        /// Delete memories with trust below LEVEL (high, medium, low)
+        #[arg(short, long)]
+        trust_below: Option<String>,
+
+        /// Keep at most N memories per scope (oldest by reinforcement removed first)
+        #[arg(short, long)]
+        max: Option<usize>,
+
+        /// Dry run — show what would be pruned without pruning
+        #[arg(short, long)]
+        dry_run: bool,
+    },
+
     /// Manage the LLM Wiki memory backend
     #[command(subcommand)]
     Wiki(MemoryWikiCommand),

@@ -26,7 +26,7 @@ impl Tool for TodoTool {
     }
 
     fn description(&self) -> &str {
-        "Read or update the todo list."
+        "Manage a task list for the current session. Tasks can be pending, in_progress, completed, or cancelled."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -47,15 +47,15 @@ impl Tool for TodoTool {
                             },
                             "status": {
                                 "type": "string",
-                                "description": "Status."
+                                "description": "Task status: pending, in_progress, completed, cancelled."
                             },
                             "priority": {
                                 "type": "string",
-                                "description": "Priority."
+                                "description": "Priority level: high, medium, low."
                             },
                             "id": {
                                 "type": "string",
-                                "description": "ID."
+                                "description": "Numeric task ID (1-based index in the todo list)."
                             }
                         }
                     }

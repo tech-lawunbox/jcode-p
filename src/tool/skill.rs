@@ -51,11 +51,11 @@ impl Tool for SkillTool {
                 "action": {
                     "type": "string",
                     "enum": ["load", "list", "reload", "reload_all", "read"],
-                    "description": "Action."
+                    "description": "Skill operation: load, list, reload, reload_all, read."
                 },
                 "name": {
                     "type": "string",
-                    "description": "Skill name."
+                    "description": "Skill name (required for load, reload, read; optional for list/reload_all)."
                 }
             }
         })

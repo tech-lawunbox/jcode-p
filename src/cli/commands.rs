@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::await_holding_lock))]
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Read, Write};
@@ -606,6 +607,19 @@ pub enum MemorySubcommand {
         overwrite: bool,
     },
     Stats,
+    Clear {
+        scope: Option<String>,
+        category: Option<String>,
+        older_than: Option<i64>,
+        dry_run: bool,
+    },
+    Prune {
+        scope: Option<String>,
+        ttl_days: Option<i64>,
+        trust_below: Option<String>,
+        max: Option<usize>,
+        dry_run: bool,
+    },
     ClearTest,
     Wiki(MemoryWikiSubcommand),
 }
@@ -616,6 +630,13 @@ pub enum MemoryWikiSubcommand {
     Doctor,
     Search { query: String },
     Schema { full: bool },
+}
+
+fn truncate_for_display(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    format!("{}...", s.chars().take(max).collect::<String>())
 }
 
 pub fn run_memory_command(cmd: MemorySubcommand) -> Result<()> {
@@ -829,6 +850,134 @@ pub fn run_memory_command(cmd: MemorySubcommand) -> Result<()> {
             println!("\nBy category:");
             for (cat, count) in &categories {
                 println!("  {}: {}", cat, count);
+            }
+        }
+
+        MemorySubcommand::Clear { scope, category, older_than, dry_run } => {
+            let scope_str = scope.as_deref().unwrap_or("project");
+            let memory_scope = scope_str.parse::<memory::MemoryScope>().unwrap_or(memory::MemoryScope::Project);
+
+            // Parse category if provided
+            let category_filter = category
+                .as_ref()
+                .and_then(|c| c.parse::<memory::MemoryCategory>().ok());
+
+            let filter = memory::MemoryFilter {
+                scope: Some(memory_scope),
+                category: category_filter,
+                older_than_days: older_than,
+                ..Default::default()
+            };
+
+            if dry_run {
+                let mut all_memories: Vec<memory::MemoryEntry> = Vec::new();
+                if scope_str == "all" || scope_str == "project" {
+                    if let Ok(graph) = manager.load_project_graph() {
+                        all_memories.extend(graph.all_memories().cloned().filter(|e| filter.matches(e)));
+                    }
+                }
+                if scope_str == "all" || scope_str == "global" {
+                    if let Ok(graph) = manager.load_global_graph() {
+                        all_memories.extend(graph.all_memories().cloned().filter(|e| filter.matches(e)));
+                    }
+                }
+                println!("Would delete {} memories:", all_memories.len());
+                for e in all_memories.iter().take(50) {
+                    println!(
+                        "  - {} [{}] {}",
+                        e.id,
+                        e.category,
+                        truncate_for_display(&e.content, 60)
+                    );
+                }
+                if all_memories.len() > 50 {
+                    println!("  ... and {} more", all_memories.len() - 50);
+                }
+            } else {
+                let result = manager.forget_matching(&filter)?;
+                println!(
+                    "Deleted {} memories (project: {}, global: {})",
+                    result.project_removed + result.global_removed,
+                    result.project_removed,
+                    result.global_removed
+                );
+                if !result.errors.is_empty() {
+                    for err in &result.errors {
+                        eprintln!("  error: {}", err);
+                    }
+                }
+            }
+        }
+
+        MemorySubcommand::Prune { scope, ttl_days, trust_below, max, dry_run } => {
+            let scope_str = scope.as_deref().unwrap_or("all");
+            let memory_scope = scope_str.parse::<memory::MemoryScope>().unwrap_or(memory::MemoryScope::All);
+
+            let trust = trust_below
+                .as_ref()
+                .and_then(|t| t.parse::<memory::TrustLevel>().ok());
+
+            let config = memory::PruneConfig {
+                scope: Some(memory_scope),
+                ttl_days,
+                trust_below: trust,
+                max_per_scope: max,
+            };
+
+            if dry_run {
+                let mut candidate_count = 0usize;
+                let now = chrono::Utc::now();
+                let ttl_cutoff = config.ttl_days.map(|d| now - chrono::Duration::days(d));
+
+                fn count_prune_candidates(
+                    entries: &[memory::MemoryEntry],
+                    ttl_cutoff: Option<chrono::DateTime<Utc>>,
+                    trust_below: Option<memory::TrustLevel>,
+                    max: Option<usize>,
+                ) -> usize {
+                    let mut count = 0;
+                    for e in entries {
+                        if let Some(cutoff) = ttl_cutoff {
+                            if e.updated_at >= cutoff {
+                                continue;
+                            }
+                        }
+                        if let Some(min_trust) = trust_below {
+                            if !(e.trust < min_trust) {
+                                continue;
+                            }
+                        }
+                        count += 1;
+                    }
+                    if let Some(max) = max {
+                        count = count.max(entries.len().saturating_sub(max));
+                    }
+                    count
+                }
+
+                if scope_str == "all" || scope_str == "project" {
+                    if let Ok(graph) = manager.load_project_graph() {
+                        candidate_count += count_prune_candidates(
+                            &graph.all_memories().cloned().collect::<Vec<_>>(), ttl_cutoff, config.trust_below, config.max_per_scope,
+                        );
+                    }
+                }
+                if scope_str == "all" || scope_str == "global" {
+                    if let Ok(graph) = manager.load_global_graph() {
+                        candidate_count += count_prune_candidates(
+                            &graph.all_memories().cloned().collect::<Vec<_>>(), ttl_cutoff, config.trust_below, config.max_per_scope,
+                        );
+                    }
+                }
+                println!("Would prune {} memories:", candidate_count);
+            } else {
+                let result = manager.prune(&config)?;
+                println!(
+                    "Pruned {} memories (project: {}, global: {})",
+                    result.project_removed + result.global_removed,
+                    result.project_removed,
+                    result.global_removed
+                );
             }
         }
 

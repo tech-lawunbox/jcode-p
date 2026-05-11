@@ -85,7 +85,7 @@ impl Tool for SubagentTool {
     }
 
     fn description(&self) -> &str {
-        "Run a subagent."
+        "Launch a sub-agent for complex multi-step tasks. Each sub-agent runs autonomously with its own context."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -104,7 +104,7 @@ impl Tool for SubagentTool {
                 },
                 "subagent_type": {
                     "type": "string",
-                    "description": "Subagent type."
+                    "description": "Agent specialization: general (default), research. Use 'general' for multi-step coding tasks, 'research' for information gathering."
                 },
                 "model": {
                     "type": "string",

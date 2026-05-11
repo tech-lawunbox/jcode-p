@@ -53,7 +53,7 @@ impl Tool for CodeSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search code examples and docs."
+        "Search code by semantic meaning (embeddings). For regex search, use grep or agentgrep. For files by name pattern, use glob."
     }
 
     fn parameters_schema(&self) -> Value {

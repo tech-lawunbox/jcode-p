@@ -30,9 +30,10 @@ mod pending;
 mod prompt_support;
 
 pub use crate::memory_types::{
-    MemoryCategory, MemoryEntry, MemoryScope, MemoryStore, Reinforcement, TrustLevel,
-    format_relevant_display_prompt, format_relevant_prompt,
+    ForgetResult, MemoryCategory, MemoryEntry, MemoryScope, MemoryStore, PruneResult,
+    Reinforcement, TrustLevel, format_relevant_display_prompt, format_relevant_prompt,
 };
+// MemoryFilter and PruneConfig are defined at module level below
 use crate::memory_types::{
     collect_skill_query_terms, format_entries_for_prompt, memory_matches_search, memory_score,
     normalize_memory_search_text, normalize_search_text, skill_retrieval_bonus,
@@ -927,7 +928,214 @@ impl MemoryManager {
 
         Ok(false)
     }
+}
 
+// ─────────────────────────────────────────────────────────────────────────
+// Bulk forget & prune types
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Filter criteria for bulk memory operations.
+#[derive(Debug, Clone, Default)]
+pub struct MemoryFilter {
+    /// Restrict to a specific scope.
+    pub scope: Option<MemoryScope>,
+    /// Restrict to a specific category.
+    pub category: Option<MemoryCategory>,
+    /// Keep only memories that have ALL of these tags.
+    pub tags: Option<Vec<String>>,
+    /// Keep only memories NOT updated since this many days ago (None = no limit).
+    pub older_than_days: Option<i64>,
+    /// Keep only memories WITH at least this trust level.
+    pub min_trust: Option<TrustLevel>,
+    /// Explicit list of IDs to match. If set, all other filter fields are ignored.
+    pub ids: Option<Vec<String>>,
+}
+
+impl MemoryFilter {
+    pub fn matches(&self, entry: &MemoryEntry) -> bool {
+        // Explicit ID list — all other criteria ignored
+        if let Some(ref ids) = self.ids {
+            return ids.contains(&entry.id);
+        }
+        if let Some(ref cat) = self.category {
+            if &entry.category != cat {
+                return false;
+            }
+        }
+        if let Some(ref tags) = self.tags {
+            if !tags.iter().all(|t| entry.tags.contains(t)) {
+                return false;
+            }
+        }
+        if let Some(days) = self.older_than_days {
+            let cutoff = Utc::now() - chrono::Duration::days(days);
+            if entry.updated_at >= cutoff {
+                return false;
+            }
+        }
+        if let Some(min_trust) = self.min_trust {
+            if entry.trust < min_trust {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+/// Configuration for a prune operation.
+#[derive(Debug, Clone, Default)]
+pub struct PruneConfig {
+    /// Restrict to a specific scope.
+    pub scope: Option<MemoryScope>,
+    /// Delete entries not updated in this many days (None = no TTL-based pruning).
+    pub ttl_days: Option<i64>,
+    /// Delete entries with trust BELOW this level (e.g. Low = delete all low-trust).
+    pub trust_below: Option<TrustLevel>,
+    /// Keep at most this many entries per scope (removes lowest-reinforcement first).
+    pub max_per_scope: Option<usize>,
+}
+
+impl MemoryManager {
+
+// ─────────────────────────────────────────────────────────────────────────
+// Bulk forget & prune methods
+// ─────────────────────────────────────────────────────────────────────────
+
+    pub fn forget_matching(&self, filter: &MemoryFilter) -> Result<ForgetResult> {
+        let mut project_graph = self.load_project_graph()?;
+        let mut global_graph = self.load_global_graph()?;
+
+        let mut result = ForgetResult::default();
+
+        // Determine which scopes to operate on
+        let check_project = filter.scope.map(|s| s != MemoryScope::Global).unwrap_or(true);
+        let check_global = filter.scope.map(|s| s != MemoryScope::Project).unwrap_or(true);
+
+        if check_project {
+            let ids: Vec<String> = project_graph
+                .memories
+                .values()
+                .filter(|e| filter.matches(e))
+                .map(|e| e.id.clone())
+                .collect();
+
+            for id in &ids {
+                if project_graph.remove_memory(id).is_some() {
+                    result.project_removed += 1;
+                }
+            }
+            if let Err(e) = self.save_project_graph(&project_graph) {
+                result.errors.push(format!("project save: {}", e));
+            }
+        }
+
+        if check_global {
+            let ids: Vec<String> = global_graph
+                .memories
+                .values()
+                .filter(|e| filter.matches(e))
+                .map(|e| e.id.clone())
+                .collect();
+
+            for id in &ids {
+                if global_graph.remove_memory(id).is_some() {
+                    result.global_removed += 1;
+                }
+            }
+            if let Err(e) = self.save_global_graph(&global_graph) {
+                result.errors.push(format!("global save: {}", e));
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Remove memories that violate prune constraints.
+    pub fn prune(&self, config: &PruneConfig) -> Result<PruneResult> {
+        let mut project_graph = self.load_project_graph()?;
+        let mut global_graph = self.load_global_graph()?;
+
+        let mut result = PruneResult::default();
+
+        let now = Utc::now();
+        let ttl_cutoff = config.ttl_days.map(|d| now - chrono::Duration::days(d));
+
+        fn prune_graph(
+            graph: &mut MemoryGraph,
+            ttl_cutoff: Option<DateTime<Utc>>,
+            trust_below: Option<TrustLevel>,
+            max_entries: Option<usize>,
+        ) -> usize {
+            let mut removed = 0;
+
+            // Phase 1: TTL + trust filter
+            let to_remove_ttl_trust: Vec<String> = graph
+                .memories
+                .values()
+                .filter(|e| {
+                    if let Some(cutoff) = ttl_cutoff {
+                        // Delete if NOT updated since cutoff (i.e. older than cutoff)
+                        if e.updated_at >= cutoff {
+                            return false; // keep — still fresh
+                        }
+                    }
+                    if let Some(min_trust) = trust_below {
+                        // Delete if trust is below threshold
+                        if !(e.trust < min_trust) {
+                            return false; // keep — trust is acceptable
+                        }
+                    }
+                    true // mark for removal
+                })
+                .map(|e| e.id.clone())
+                .collect();
+
+            for id in &to_remove_ttl_trust {
+                if graph.remove_memory(id).is_some() {
+                    removed += 1;
+                }
+            }
+
+            // Phase 2: Reinforcement-based quota trim
+            if let Some(max) = max_entries {
+                let count = graph.memory_count();
+                if count > max {
+                    let excess = count - max;
+                    let mut entries: Vec<_> = graph.all_memories().cloned().collect();
+                    entries.sort_by_key(|e| e.strength);
+                    for entry in entries.into_iter().take(excess) {
+                        if graph.remove_memory(&entry.id).is_some() {
+                            removed += 1;
+                        }
+                    }
+                }
+            }
+
+            removed
+        }
+
+        if config.scope.map(|s| s != MemoryScope::Global).unwrap_or(true) {
+            result.project_removed += prune_graph(
+                &mut project_graph,
+                ttl_cutoff,
+                config.trust_below,
+                config.max_per_scope,
+            );
+            self.save_project_graph(&project_graph)?;
+        }
+
+        if config.scope.map(|s| s != MemoryScope::Project).unwrap_or(true) {
+            result.global_removed += prune_graph(
+                &mut global_graph,
+                ttl_cutoff,
+                config.trust_below,
+                config.max_per_scope,
+            );
+            self.save_global_graph(&global_graph)?;
+        }
+
+        Ok(result)
+    }
     // === Sidecar Integration ===
 
     /// Extract memories from a session transcript using the Haiku sidecar

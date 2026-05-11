@@ -38,7 +38,7 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search the web."
+        "Search the web using a query. To fetch a known URL, use webfetch. For interactive browser control, use browser."
     }
 
     fn parameters_schema(&self) -> Value {

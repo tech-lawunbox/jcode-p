@@ -51,7 +51,7 @@ impl Tool for ConversationSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search conversation history."
+        "Search the current conversation history. For searching past sessions, use session_search."
     }
 
     fn parameters_schema(&self) -> Value {

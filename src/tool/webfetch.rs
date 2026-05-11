@@ -38,7 +38,7 @@ impl Tool for WebFetchTool {
     }
 
     fn description(&self) -> &str {
-        "Fetch a URL."
+        "Fetch a known URL and return its content. To search the web, use websearch. For interactive browser control, use browser."
     }
 
     fn parameters_schema(&self) -> Value {

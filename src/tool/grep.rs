@@ -42,7 +42,7 @@ impl Tool for GrepTool {
     }
 
     fn description(&self) -> &str {
-        "Search files with a simple regex. Prefer agentgrep for code search unless you need this lightweight grep fallback."
+        "Search files with a simple regex. Prefer agentgrep for code search unless you need this lightweight grep fallback. For semantic code search, use codesearch."
     }
 
     fn parameters_schema(&self) -> Value {

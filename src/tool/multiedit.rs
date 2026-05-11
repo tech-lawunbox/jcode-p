@@ -35,7 +35,7 @@ impl Tool for MultiEditTool {
     }
 
     fn description(&self) -> &str {
-        "Apply multiple edits to one file."
+        "Apply multiple edits to one file in a single call. For a single edit, use edit. For diff-based patches, use patch or apply_patch."
     }
 
     fn parameters_schema(&self) -> Value {

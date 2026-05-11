@@ -373,7 +373,7 @@ impl Tool for SelfDevTool {
     }
 
     fn description(&self) -> &str {
-        "Manage self-dev builds and reloads."
+        "Build, check, test, and manage the jcode self-development build pipeline."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -395,9 +395,9 @@ impl Tool for SelfDevTool {
                     ],
                     "description": "Action."
                 },
-                "prompt": { "type": "string" },
-                "context": { "type": "string" },
-                "reason": { "type": "string" },
+                "prompt": { "type": "string", "description": "Prompt describing the change for selfdev self-patching." },
+                "context": { "type": "string", "description": "Context string for selfdev enter (e.g. diff or problem description)." },
+                "reason": { "type": "string", "description": "Reason for the build, shown in notifications." },
                 "target": {
                     "type": "string",
                     "enum": ["auto", "tui", "desktop", "all"],
@@ -407,8 +407,8 @@ impl Tool for SelfDevTool {
                     "type": "string",
                     "description": "Shell command for action=test. Runs under the selfdev worktree compile lock."
                 },
-                "request_id": { "type": "string" },
-                "task_id": { "type": "string" }
+                "request_id": { "type": "string", "description": "Build request ID for tracking background builds." },
+                "task_id": { "type": "string", "description": "Background task ID for tracking build status." }
             },
             "required": ["action"]
         })
