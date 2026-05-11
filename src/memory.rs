@@ -509,7 +509,17 @@ impl MemoryManager {
                     "Embedding failed, falling back to keyword search: {}",
                     e
                 ));
-                return Ok(Vec::new());
+                // Fallback: split text into keywords and use keyword search
+                let keywords: Vec<&str> = text.split_whitespace().collect();
+                if keywords.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let fallback: Vec<(MemoryEntry, f32)> = self
+                    .get_relevant_keywords(&keywords, limit)?
+                    .into_iter()
+                    .map(|e| (e, 0.0))
+                    .collect();
+                return Ok(fallback);
             }
         };
 
@@ -530,7 +540,17 @@ impl MemoryManager {
                     "Embedding failed, falling back to keyword search: {}",
                     e
                 ));
-                return Ok(Vec::new());
+                // Fallback: split text into keywords and use keyword search
+                let keywords: Vec<&str> = text.split_whitespace().collect();
+                if keywords.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let fallback: Vec<(MemoryEntry, f32)> = self
+                    .get_relevant_keywords_scoped(&keywords, limit, scope)?
+                    .into_iter()
+                    .map(|e| (e, 0.0))
+                    .collect();
+                return Ok(fallback);
             }
         };
 
@@ -655,7 +675,36 @@ impl MemoryManager {
                     "Embedding failed for retrieval candidates, falling back to keyword search: {}",
                     e
                 ));
-                return Ok(Vec::new());
+                // Fallback: split text into keywords and use keyword search
+                let keywords: Vec<&str> = text.split_whitespace().collect();
+                if keywords.is_empty() {
+                    return Ok(Vec::new());
+                }
+                let entries = self.collect_retrieval_candidates_scoped(scope)?;
+                let normalized_keywords: Vec<String> = keywords
+                    .iter()
+                    .map(|k| normalize_search_text(k))
+                    .filter(|k| !k.is_empty())
+                    .collect();
+                let fallback: Vec<(MemoryEntry, f32)> = top_k_by_ord(
+                    entries
+                        .into_iter()
+                        .filter(|entry| {
+                            let content_lower = normalize_search_text(&entry.content);
+                            normalized_keywords
+                                .iter()
+                                .any(|kw| content_lower.contains(kw))
+                        })
+                        .map(|entry| {
+                            let updated_at = entry.updated_at.timestamp_millis();
+                            (entry, updated_at)
+                        }),
+                    limit,
+                )
+                .into_iter()
+                .map(|(entry, _)| (entry, 0.0))
+                .collect();
+                return Ok(fallback);
             }
         };
 
@@ -1292,6 +1341,44 @@ impl MemoryManager {
         Ok(matches)
     }
 
+    /// Keyword-based relevance search with scope.
+    pub fn get_relevant_keywords_scoped(
+        &self,
+        keywords: &[&str],
+        limit: usize,
+        scope: MemoryScope,
+    ) -> Result<Vec<MemoryEntry>> {
+        let normalized_keywords: Vec<String> = keywords
+            .iter()
+            .map(|keyword| normalize_search_text(keyword))
+            .filter(|keyword| !keyword.is_empty())
+            .collect();
+        if normalized_keywords.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let matches: Vec<_> = top_k_by_ord(
+            self.collect_memories_scoped(scope)?
+                .into_iter()
+                .filter(|entry| {
+                    let content_lower = normalize_search_text(&entry.content);
+                    normalized_keywords
+                        .iter()
+                        .any(|kw| content_lower.contains(kw))
+                })
+                .map(|entry| {
+                    let updated_at = entry.updated_at.timestamp_millis();
+                    (entry, updated_at)
+                }),
+            limit,
+        )
+        .into_iter()
+        .map(|(entry, _)| entry)
+        .collect();
+
+        Ok(matches)
+    }
+
     // === Async Memory Checking ===
 
     /// Spawn a background task to check memory relevance for a specific session.
@@ -1472,10 +1559,13 @@ impl MemoryManager {
         };
 
         // Filter out memories that have already been injected in this session
+        // (both globally injected AND per-session injected to match memory_agent behavior)
         let pre_filter_count = candidates.len();
         let candidates: Vec<_> = candidates
             .into_iter()
-            .filter(|(entry, _)| !is_memory_injected_any(&entry.id))
+            .filter(|(entry, _)| {
+                !is_memory_injected_any(&entry.id) && !is_memory_injected(session_id, &entry.id)
+            })
             .collect();
         if candidates.len() < pre_filter_count {
             crate::logging::info(&format!(
