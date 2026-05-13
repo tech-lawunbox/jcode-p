@@ -7,6 +7,7 @@ mod session_launch;
 mod single_session;
 mod single_session_render;
 mod workspace;
+mod workspace_project;
 
 use animation::{AnimatedViewport, FocusPulse, VisibleColumnLayout, WorkspaceRenderLayout};
 use anyhow::{Context, Result};

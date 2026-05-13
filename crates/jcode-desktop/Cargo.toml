@@ -12,11 +12,14 @@ bytemuck = { version = "1", features = ["derive"] }
 glyphon = "0.5"
 jcode-memory-types = { path = "../jcode-memory-types" }
 jcode-message-types = { path = "../jcode-message-types" }
+jcode-storage = { path = "../jcode-storage" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 libc = "0.2"
 pollster = "0.3"
 pulldown-cmark = "0.12"
 serde_json = "1"
+chrono = "0.4"
+serde = { version = "1", features = ["derive"] }
 wgpu = "0.19"
 winit = "0.29"
 
