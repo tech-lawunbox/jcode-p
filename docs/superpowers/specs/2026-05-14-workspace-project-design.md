@@ -4,6 +4,14 @@
 
 Workspace is an **optional enhancement** for organizing multiple projects. Projects remain first-class citizens that work independently — workspace is a lens, not a requirement.
 
+## Implementation Status
+
+- [x] Phase 1: Core Structure (Tasks 1-4) - WorkspaceConfig, ProjectEntry, persistence, CLI commands
+- [x] Phase 2: Memory Integration (Task 3, 8) - MemoryScope::Workspace, workspace memory directory
+- [x] Phase 3: CLI Integration (Tasks 4-6) - /workspace command with create/activate/add-project
+- [x] Phase 4: Project Scoping (Task 7) - project-scoped session loading
+- [ ] Phase 5: TUI Integration (future) - workspace view in TUI
+
 ---
 
 ## Core Principles
