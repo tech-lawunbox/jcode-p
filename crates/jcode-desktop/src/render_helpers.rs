@@ -1,4 +1,19 @@
 use super::*;
+use crate::workspace_state::ActiveWorkspace;
+
+/// Get surface title including project context
+pub fn surface_title_with_project(
+    surface: &crate::workspace::Surface,
+    workspace: Option<&ActiveWorkspace>,
+) -> String {
+    match workspace {
+        Some(ws) if surface.session_id.is_some() => {
+            // Show workspace context with session title
+            format!("[{}] {}", ws.name(), surface.title)
+        }
+        _ => surface.title.clone(),
+    }
+}
 
 /// Streaming indicator pulse animation
 const STREAMING_PULSE_DIM: [f32; 4] = [0.5, 0.5, 0.5, 0.3];
