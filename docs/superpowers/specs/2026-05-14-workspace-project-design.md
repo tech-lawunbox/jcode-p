@@ -10,7 +10,14 @@ Workspace is an **optional enhancement** for organizing multiple projects. Proje
 - [x] Phase 2: Memory Integration (Task 3, 8) - MemoryScope::Workspace, workspace memory directory
 - [x] Phase 3: CLI Integration (Tasks 4-6) - /workspace command with create/activate/add-project
 - [x] Phase 4: Project Scoping (Task 7) - project-scoped session loading
-- [ ] Phase 5: TUI Integration (future) - workspace view in TUI
+- [x] Phase 5: TUI Integration
+  - [x] Task 1: ActiveWorkspace state (commit ff053a5c8)
+  - [x] Task 2: Workspace loading (commit c98771261)
+  - [x] Task 3: Status bar indicator (commit 6b672dcd)
+  - [x] Task 4: Project switching keys (commit ee4ab414a)
+  - [x] Task 5: Project surface rendering (commit 69cf9591d)
+  - [x] Task 6: Startup detection (commit 542d549bc)
+  - [x] Task 7: Integration tests (pending commit)
 
 ---
 
