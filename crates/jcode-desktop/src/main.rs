@@ -9,6 +9,7 @@ mod single_session_render;
 mod workspace;
 mod workspace_cli;
 mod workspace_integration_test;
+mod workspace_tui_integration_test;
 mod workspace_project;
 mod workspace_state;
 

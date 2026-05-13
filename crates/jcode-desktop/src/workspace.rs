@@ -258,6 +258,7 @@ impl Workspace {
             memory_activity: jcode_memory_types::MemoryActivity::default(),
             panel_size: PanelSizePreset::Quarter,
             next_id: 8,
+            active_workspace: None,
         }
     }
 
