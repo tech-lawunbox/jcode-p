@@ -400,6 +400,52 @@ pub(crate) fn push_workspace_number(
     }
 }
 
+/// Renders a small pulsing dot on the left edge of the status bar.
+/// Shows streaming activity state.
+pub(crate) fn push_streaming_indicator(
+    vertices: &mut Vec<Vertex>,
+    is_streaming: bool,
+    pulse_phase: f32, // 0.0 to 1.0, repeats each cycle
+    status_rect: Rect,
+    size: PhysicalSize<u32>,
+) {
+    let x = status_rect.x + STREAMING_DOT_LEFT_PADDING;
+    let y = status_rect.y + (status_rect.height - STREAMING_DOT_SIZE) / 2.0;
+
+    // Interpolate color based on streaming state and pulse phase
+    let color = if is_streaming {
+        // Pulse between dim and active: phase 0.0=dim, 0.5=active, 1.0=dim
+        let t = (pulse_phase * 2.0).min(1.0);
+        let pulse = if t < 0.5 { t * 2.0 } else { (1.0 - t) * 2.0 };
+        lerp_color(STREAMING_PULSE_DIM, STREAMING_PULSE_ACTIVE, pulse)
+    } else {
+        STREAMING_PULSE_DIM
+    };
+
+    push_rounded_rect(
+        vertices,
+        Rect {
+            x,
+            y,
+            width: STREAMING_DOT_SIZE,
+            height: STREAMING_DOT_SIZE,
+        },
+        STREAMING_DOT_SIZE / 2.0, // fully rounded
+        color,
+        size,
+    );
+}
+
+/// Linear interpolation between two RGBA colors
+fn lerp_color(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+        a[3] + (b[3] - a[3]) * t,
+    ]
+}
+
 pub(crate) fn push_workspace_minus(
     vertices: &mut Vec<Vertex>,
     x: f32,
