@@ -18,6 +18,17 @@ pub struct MemoryActivity {
     pub recent_events: Vec<MemoryEvent>,
 }
 
+impl Default for MemoryActivity {
+    fn default() -> Self {
+        Self {
+            state: MemoryState::default(),
+            state_since: Instant::now(),
+            pipeline: None,
+            recent_events: Vec::new(),
+        }
+    }
+}
+
 impl MemoryActivity {
     pub fn is_processing(&self) -> bool {
         !matches!(self.state, MemoryState::Idle)
@@ -206,8 +217,8 @@ pub enum MemoryEventKind {
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Trust levels for memories
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+/// Trust levels for memories (ordered: High > Medium > Low)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum TrustLevel {
@@ -218,6 +229,33 @@ pub enum TrustLevel {
     Medium,
     /// Inferred by the agent
     Low,
+}
+
+impl std::str::FromStr for TrustLevel {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "high" => Ok(Self::High),
+            "medium" => Ok(Self::Medium),
+            "low" => Ok(Self::Low),
+            other => Err(format!("unknown trust '{}', expected high/medium/low", other)),
+        }
+    }
+}
+
+/// Result of a forget_matching operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ForgetResult {
+    pub project_removed: usize,
+    pub global_removed: usize,
+    pub errors: Vec<String>,
+}
+
+/// Result of a prune operation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PruneResult {
+    pub project_removed: usize,
+    pub global_removed: usize,
 }
 
 /// A reinforcement breadcrumb tracking when/where a memory was reinforced
@@ -273,12 +311,18 @@ fn default_active() -> bool {
     true
 }
 
+fn new_memory_id() -> String {
+    let ts = Utc::now().timestamp_millis();
+    let rand: u64 = rand::random();
+    format!("mem_{}_{}", ts, rand)
+}
+
 impl MemoryEntry {
     pub fn new(category: MemoryCategory, content: impl Into<String>) -> Self {
         let now = Utc::now();
         let content = content.into();
         Self {
-            id: jcode_core::id::new_id("mem"),
+            id: new_memory_id(),
             category,
             search_text: normalize_memory_search_text(&content, &[]),
             content,
@@ -463,6 +507,18 @@ impl MemoryScope {
 
     pub fn includes_global(self) -> bool {
         matches!(self, Self::Global | Self::All)
+    }
+}
+
+impl std::str::FromStr for MemoryScope {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_lowercase().as_str() {
+            "project" => Ok(Self::Project),
+            "global" => Ok(Self::Global),
+            "all" => Ok(Self::All),
+            other => Err(format!("unknown scope '{}', expected project/global/all", other)),
+        }
     }
 }
 

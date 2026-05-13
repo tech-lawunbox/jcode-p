@@ -222,6 +222,8 @@ pub struct Workspace {
     pub detail_scroll: usize,
     pub draft: String,
     pub pending_images: Vec<(String, String)>,
+    pub connection_phase: jcode_message_types::ConnectionPhase,
+    pub memory_activity: jcode_memory_types::MemoryActivity,
     panel_size: PanelSizePreset,
     next_id: u64,
 }
@@ -247,6 +249,8 @@ impl Workspace {
             detail_scroll: 0,
             draft: String::new(),
             pending_images: Vec::new(),
+            connection_phase: jcode_message_types::ConnectionPhase::default(),
+            memory_activity: jcode_memory_types::MemoryActivity::default(),
             panel_size: PanelSizePreset::Quarter,
             next_id: 8,
         }
@@ -276,6 +280,8 @@ impl Workspace {
             detail_scroll: 0,
             draft: String::new(),
             pending_images: Vec::new(),
+            connection_phase: jcode_message_types::ConnectionPhase::default(),
+            memory_activity: jcode_memory_types::MemoryActivity::default(),
             panel_size: PanelSizePreset::Quarter,
             next_id,
         }
@@ -302,6 +308,8 @@ impl Workspace {
             detail_scroll: 0,
             draft: String::new(),
             pending_images: Vec::new(),
+            connection_phase: jcode_message_types::ConnectionPhase::default(),
+            memory_activity: jcode_memory_types::MemoryActivity::default(),
             panel_size: PanelSizePreset::Quarter,
             next_id: 2,
         }

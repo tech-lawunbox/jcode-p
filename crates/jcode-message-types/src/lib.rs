@@ -515,9 +515,10 @@ pub struct InputShellResult {
 }
 
 /// Connection phase for status bar transparency.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConnectionPhase {
     /// Refreshing OAuth token
+    #[default]
     Authenticating,
     /// TCP + TLS connection to API
     Connecting,

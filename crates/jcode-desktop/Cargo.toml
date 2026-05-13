@@ -10,6 +10,8 @@ arboard = "3"
 base64 = "0.22"
 bytemuck = { version = "1", features = ["derive"] }
 glyphon = "0.5"
+jcode-memory-types = { path = "../jcode-memory-types" }
+jcode-message-types = { path = "../jcode-message-types" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 libc = "0.2"
 pollster = "0.3"
