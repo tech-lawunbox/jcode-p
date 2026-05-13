@@ -2058,6 +2058,21 @@ fn build_vertices(
     let active_workspace = workspace.current_workspace();
     let visible_layout = render_layout.visible;
     push_workspace_number(&mut vertices, active_workspace, status_rect, size);
+
+    // Streaming indicator
+    let is_streaming = matches!(
+        workspace.connection_phase,
+        jcode_message_types::ConnectionPhase::Streaming | jcode_message_types::ConnectionPhase::WaitingForResponse
+    );
+    let pulse_phase = (focus_pulse + 0.5) % 1.0;
+    push_streaming_indicator(
+        &mut vertices,
+        is_streaming,
+        pulse_phase,
+        status_rect,
+        size,
+    );
+
     push_status_preview(
         &mut vertices,
         workspace,
@@ -2066,6 +2081,9 @@ fn build_vertices(
         status_rect,
         size,
     );
+    // Memory state badge
+    let memory_is_active = workspace.memory_activity.is_processing();
+    push_memory_badge(&mut vertices, memory_is_active, status_rect, size);
     push_status_text(&mut vertices, workspace, status_rect, size);
 
     if workspace.zoomed {
