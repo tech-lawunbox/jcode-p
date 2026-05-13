@@ -273,10 +273,61 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     }
 }
 
+/// Load session cards for a specific project path
+pub fn load_session_cards_for_project(project_path: &Path) -> Result<Vec<SessionCard>> {
+    let sessions_dir = jcode_sessions_dir()?.join(hash_project_path(project_path));
+
+    if !sessions_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut cards = vec![];
+
+    for entry in fs::read_dir(&sessions_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().map(|e| e == "json").unwrap_or(false) {
+            if let Some(card) = load_session_card(&path)? {
+                cards.push(card);
+            }
+        }
+    }
+
+    // Sort by most recent first
+    cards.sort_by(|a, b| b.detail.cmp(&a.detail));
+
+    Ok(cards)
+}
+
+/// Hash project path to create unique session directory name
+fn hash_project_path(path: &Path) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut s = DefaultHasher::new();
+    path.to_string_lossy().hash(&mut s);
+    format!("{:016x}", s.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_load_session_cards_for_project() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join("project_sessions_test");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Should return empty for project with no sessions
+        let cards = load_session_cards_for_project(&temp_dir).unwrap();
+        assert!(cards.is_empty());
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
 
     #[test]
     fn latest_user_preview_uses_recent_user_text() {
