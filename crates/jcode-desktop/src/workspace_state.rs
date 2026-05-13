@@ -1,4 +1,5 @@
 use crate::workspace_project::{ProjectEntry, WorkspaceConfig};
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 
 /// Active workspace state in the TUI
@@ -83,6 +84,16 @@ impl ActiveWorkspace {
     pub fn config(&self) -> &WorkspaceConfig {
         &self.config
     }
+}
+
+/// Load and activate workspace from path
+pub fn load_workspace(path: &PathBuf) -> Result<ActiveWorkspace> {
+    let config_path = path.join(".workspace");
+    let config = crate::workspace_project::load_workspace_config(&config_path)
+        .context("Failed to load workspace config")?
+        .context("No workspace at specified path")?;
+
+    Ok(ActiveWorkspace::new(config))
 }
 
 #[cfg(test)]
@@ -181,5 +192,31 @@ mod tests {
         assert_eq!(state.focused_project_index(), 1);
 
         let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_load_workspace_from_path() {
+        let temp_dir = std::env::temp_dir().join("load_ws_test");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create workspace files
+        let _config = crate::workspace_cli::create_workspace(
+            "LoadTest".to_string(),
+            temp_dir.clone(),
+            vec![],
+        ).unwrap();
+
+        // Load it back
+        let loaded = load_workspace(&temp_dir).unwrap();
+        assert_eq!(loaded.name(), "LoadTest");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_load_workspace_nonexistent() {
+        let result = load_workspace(&std::path::PathBuf::from("/nonexistent/path"));
+        assert!(result.is_err());
     }
 }

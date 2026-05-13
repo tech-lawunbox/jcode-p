@@ -95,4 +95,32 @@ mod tests {
 
         let _ = fs::remove_dir_all(temp_dir);
     }
+
+    #[test]
+    fn test_load_workspace_from_path() {
+        use std::fs;
+
+        let temp_dir = std::env::temp_dir().join("load_ws_test");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create workspace files
+        let config = crate::workspace_cli::create_workspace(
+            "LoadTest".to_string(),
+            temp_dir.clone(),
+            vec![],
+        ).unwrap();
+
+        // Load it back
+        let loaded = load_workspace(&temp_dir).unwrap();
+        assert_eq!(loaded.name(), "LoadTest");
+
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_load_workspace_nonexistent() {
+        let result = load_workspace(&std::path::PathBuf::from("/nonexistent/path"));
+        assert!(result.is_err());
+    }
 }
