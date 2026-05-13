@@ -498,15 +498,20 @@ pub enum MemoryScope {
     Project,
     Global,
     All,
+    Workspace,
 }
 
 impl MemoryScope {
     pub fn includes_project(self) -> bool {
-        matches!(self, Self::Project | Self::All)
+        matches!(self, Self::Project | Self::All | Self::Workspace)
     }
 
     pub fn includes_global(self) -> bool {
-        matches!(self, Self::Global | Self::All)
+        matches!(self, Self::Global | Self::All | Self::Workspace)
+    }
+
+    pub fn includes_workspace(self) -> bool {
+        matches!(self, Self::Workspace)
     }
 }
 
@@ -517,7 +522,19 @@ impl std::str::FromStr for MemoryScope {
             "project" => Ok(Self::Project),
             "global" => Ok(Self::Global),
             "all" => Ok(Self::All),
-            other => Err(format!("unknown scope '{}', expected project/global/all", other)),
+            "workspace" => Ok(Self::Workspace),
+            other => Err(format!("unknown scope '{}', expected project/global/all/workspace", other)),
+        }
+    }
+}
+
+impl std::fmt::Display for MemoryScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MemoryScope::Project => write!(f, "project"),
+            MemoryScope::Global => write!(f, "global"),
+            MemoryScope::All => write!(f, "all"),
+            MemoryScope::Workspace => write!(f, "workspace"),
         }
     }
 }
@@ -972,6 +989,27 @@ pub mod ranking {
             .map(|(value, key, _)| (value, key))
             .collect()
     }
+
+#[cfg(test)]
+mod workspace_scope_tests {
+    use crate::MemoryScope;
+
+    #[test]
+    fn test_workspace_scope_includes_project_and_global() {
+        let scope = MemoryScope::Workspace;
+        assert!(scope.includes_project());
+        assert!(scope.includes_global());
+    }
+
+    #[test]
+    fn test_workspace_scope_string_roundtrip() {
+        let scope = MemoryScope::Workspace;
+        let s = scope.to_string();
+        assert_eq!(s, "workspace");
+        let parsed: MemoryScope = s.parse().unwrap();
+        assert_eq!(parsed, MemoryScope::Workspace);
+    }
+}
 
     #[cfg(test)]
     mod tests {
