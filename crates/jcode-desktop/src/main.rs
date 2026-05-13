@@ -7,6 +7,8 @@ mod session_launch;
 mod single_session;
 mod single_session_render;
 mod workspace;
+mod workspace_cli;
+mod workspace_integration_test;
 mod workspace_project;
 
 use animation::{AnimatedViewport, FocusPulse, VisibleColumnLayout, WorkspaceRenderLayout};
