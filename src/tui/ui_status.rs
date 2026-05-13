@@ -45,6 +45,12 @@ pub(super) fn is_running_stable_release() -> bool {
     })
 }
 
+/// Workspace status badge for status bar.
+/// Returns workspace info formatted as "WS:{workspace}[{focused}/{total}]" when active.
+pub fn render_workspace_status() -> String {
+    crate::tui::workspace_client::workspace_status()
+}
+
 #[cfg(test)]
 pub(crate) fn calculate_input_lines(input: &str, line_width: usize) -> usize {
     use unicode_width::UnicodeWidthChar;

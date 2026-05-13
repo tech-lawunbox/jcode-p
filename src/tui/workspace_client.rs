@@ -32,6 +32,24 @@ pub fn is_enabled() -> bool {
     with_state(|state| state.enabled)
 }
 
+/// Returns a compact workspace status string for the status bar.
+/// Format: "WS:{workspace}[{focused}/{total}]" or empty string if not applicable.
+pub fn workspace_status() -> String {
+    with_state(|state| {
+        if !state.enabled || state.map.is_empty() {
+            return String::new();
+        }
+        let current = state.map.current_workspace();
+        let row = match state.map.row(current) {
+            Some(row) => row,
+            None => return String::new(),
+        };
+        let focused = row.focused_index().map(|i| i + 1).unwrap_or(0);
+        let total = row.sessions.len();
+        format!("WS:{}[{}/{}]", current, focused, total)
+    })
+}
+
 pub fn enable(current_session_id: Option<&str>, all_sessions: &[String]) {
     with_state(|state| {
         state.enabled = true;
