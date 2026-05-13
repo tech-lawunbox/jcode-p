@@ -85,6 +85,8 @@ pub enum KeyInput {
     CopyLatestResponse,
     OpenModelPicker,
     OpenSessionSwitcher,
+    WorkspaceNext,
+    WorkspacePrev,
     ModelPickerMove(i32),
     CycleModel(i8),
     AttachClipboardImage,
@@ -135,6 +137,8 @@ pub enum KeyOutcome {
         images: Vec<(String, String)>,
     },
     Exit,
+    SwitchToProject(usize),
+    ShowWorkspacePicker,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -224,6 +228,7 @@ pub struct Workspace {
     pub pending_images: Vec<(String, String)>,
     pub connection_phase: jcode_message_types::ConnectionPhase,
     pub memory_activity: jcode_memory_types::MemoryActivity,
+    pub active_workspace: Option<crate::workspace_state::ActiveWorkspace>,
     panel_size: PanelSizePreset,
     next_id: u64,
 }
@@ -284,6 +289,7 @@ impl Workspace {
             memory_activity: jcode_memory_types::MemoryActivity::default(),
             panel_size: PanelSizePreset::Quarter,
             next_id,
+            active_workspace: None,
         }
     }
 
@@ -312,6 +318,7 @@ impl Workspace {
             memory_activity: jcode_memory_types::MemoryActivity::default(),
             panel_size: PanelSizePreset::Quarter,
             next_id: 2,
+            active_workspace: None,
         }
     }
 
@@ -501,6 +508,22 @@ impl Workspace {
             | KeyInput::CutInputLine => {
                 return KeyOutcome::None;
             }
+            KeyInput::WorkspaceNext => {
+                if let Some(ref mut ws) = self.active_workspace {
+                    if ws.focus_next_project() {
+                        return KeyOutcome::SwitchToProject(ws.focused_project_index());
+                    }
+                }
+                return KeyOutcome::None;
+            }
+            KeyInput::WorkspacePrev => {
+                if let Some(ref mut ws) = self.active_workspace {
+                    if ws.focus_previous_project() {
+                        return KeyOutcome::SwitchToProject(ws.focused_project_index());
+                    }
+                }
+                return KeyOutcome::None;
+            }
             _ => {}
         }
 
@@ -619,7 +642,9 @@ impl Workspace {
             | KeyInput::OpenModelPicker
             | KeyInput::OpenSessionSwitcher
             | KeyInput::ModelPickerMove(_)
-            | KeyInput::CycleModel(_) => KeyOutcome::None,
+            | KeyInput::CycleModel(_)
+            | KeyInput::WorkspaceNext
+            | KeyInput::WorkspacePrev => KeyOutcome::None,
             KeyInput::RetrieveQueuedDraft => KeyOutcome::None,
             KeyInput::PasteText => KeyOutcome::PasteText,
             KeyInput::Character(text) => {

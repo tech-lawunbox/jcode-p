@@ -574,6 +574,12 @@ async fn run() -> Result<()> {
                             window.set_title(&app.status_title());
                             window.request_redraw();
                         }
+                        KeyOutcome::SwitchToProject(_index) => {
+                            window.request_redraw();
+                        }
+                        KeyOutcome::ShowWorkspacePicker => {
+                            window.request_redraw();
+                        }
                         KeyOutcome::None => {}
                     }
                 }
