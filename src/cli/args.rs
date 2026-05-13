@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand, ValueEnum};
 
 use super::provider_init::ProviderChoice;
@@ -86,6 +88,53 @@ pub(crate) struct Args {
 
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum WorkspaceCommand {
+    /// Create a new workspace
+    Create {
+        /// Workspace name
+        name: String,
+        /// Workspace directory path
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Add projects now
+        #[arg(long, short)]
+        projects: Option<Vec<PathBuf>>,
+    },
+    /// Activate a workspace (load all projects)
+    Activate {
+        /// Path to workspace directory
+        path: PathBuf,
+    },
+    /// Deactivate current workspace
+    Deactivate,
+    /// Add a project to workspace
+    AddProject {
+        /// Project path to add
+        path: PathBuf,
+        /// Project name (defaults to directory name)
+        #[arg(long, short)]
+        name: Option<String>,
+    },
+    /// Remove a project from workspace
+    RemoveProject {
+        /// Project path to remove
+        path: PathBuf,
+    },
+    /// List all workspaces
+    List,
+    /// Show workspace status
+    Status {
+        /// Path to workspace (current if not specified)
+        path: Option<PathBuf>,
+    },
+    /// Open a project directly (no workspace)
+    OpenProject {
+        /// Project path to open
+        path: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -235,6 +284,10 @@ pub(crate) enum Command {
     /// Session management commands
     #[command(subcommand)]
     Session(SessionCommand),
+
+    /// Workspace management commands
+    #[command(subcommand)]
+    Workspace(WorkspaceCommand),
 
     /// Ambient mode management
     #[command(subcommand)]
