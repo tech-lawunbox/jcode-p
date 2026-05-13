@@ -1,5 +1,11 @@
 use super::*;
 
+/// Streaming indicator pulse animation
+const STREAMING_PULSE_DIM: [f32; 4] = [0.5, 0.5, 0.5, 0.3];
+const STREAMING_PULSE_ACTIVE: [f32; 4] = [0.030, 0.125, 0.080, 1.0];
+const STREAMING_DOT_SIZE: f32 = 6.0;
+const STREAMING_DOT_LEFT_PADDING: f32 = 12.0;
+
 pub(crate) fn push_panel_title(
     vertices: &mut Vec<Vertex>,
     title: &str,
