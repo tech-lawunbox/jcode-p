@@ -30,12 +30,14 @@ impl MemoryTool {
             MemoryScope::Project => "project",
             MemoryScope::Global => "global",
             MemoryScope::All => "all",
+            MemoryScope::Workspace => "workspace",
         }) {
             "project" => Ok(MemoryScope::Project),
             "global" => Ok(MemoryScope::Global),
             "all" => Ok(MemoryScope::All),
+            "workspace" => Ok(MemoryScope::Workspace),
             other => Err(anyhow::anyhow!(
-                "Unknown scope: {}. Use project, global, or all",
+                "Unknown scope: {}. Use project, global, workspace, or all",
                 other
             )),
         }

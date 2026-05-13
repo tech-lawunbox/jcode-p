@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use super::args::{
     AmbientCommand, Args, AuthCommand, Command, MemoryCommand, ModelCommand, ProviderCommand,
-    RestartCommand, SessionCommand, TranscriptModeArg,
+    RestartCommand, SessionCommand, TranscriptModeArg, WorkspaceCommand,
 };
 use crate::{
     agent, auth, build, provider, provider_catalog, server, session, setup_hints, startup_profile,
@@ -209,6 +209,126 @@ pub(crate) async fn run_main(mut args: Args) -> Result<()> {
                 json,
             } => commands::run_session_rename_command(&session, name.as_deref(), clear, json)?,
         },
+        Some(Command::Workspace(workspace_cmd)) => {
+            use crate::cli::workspace::{create_workspace, activate_workspace, add_project_to_workspace, list_workspaces};
+            use std::path::PathBuf;
+
+            match workspace_cmd {
+                WorkspaceCommand::Create { name, path, projects } => {
+                    let path = path.unwrap_or_else(|| {
+                        jcode_storage::jcode_dir()
+                            .unwrap_or_else(|_| PathBuf::from("."))
+                            .join("workspaces")
+                            .join(&name)
+                    });
+                    let projects = projects.unwrap_or_default();
+
+                    match create_workspace(name, path.clone(), projects) {
+                        Ok(config) => {
+                            println!("Workspace '{}' created at {}", config.name, config.path.display());
+                            println!("  {} projects added", config.projects.len());
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to create workspace: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                WorkspaceCommand::Activate { path } => {
+                    match activate_workspace(&path) {
+                        Ok(config) => {
+                            println!("Workspace '{}' activated", config.name);
+                            println!("  {} projects available", config.available_projects_count());
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to activate workspace: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                WorkspaceCommand::AddProject { path, name } => {
+                    use crate::cli::workspace_project::find_workspace_config;
+
+                    let workspace_path = find_workspace_config(&std::env::current_dir().unwrap())
+                        .unwrap_or(None)
+                        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+                    match workspace_path {
+                        Some(ws_path) => {
+                            match add_project_to_workspace(&ws_path, path, name) {
+                                Ok(config) => {
+                                    println!("Project added to '{}'", config.name);
+                                    println!("  {} projects total", config.projects.len());
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to add project: {}", e);
+                                    std::process::exit(1);
+                                }
+                            }
+                        }
+                        None => {
+                            eprintln!("No workspace found. Run `jcode workspace activate <path>` first.");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                WorkspaceCommand::List => {
+                    match list_workspaces() {
+                        Ok(workspaces) => {
+                            if workspaces.is_empty() {
+                                println!("No workspaces found.");
+                            } else {
+                                use crate::cli::workspace_project::{load_workspace_config, WORKSPACE_FILENAME};
+                                for ws in workspaces {
+                                    if let Ok(Some(config)) = load_workspace_config(&ws.join(WORKSPACE_FILENAME)) {
+                                        println!("  {} - {}", config.name, ws.display());
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to list workspaces: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                WorkspaceCommand::Status { path } => {
+                    use crate::cli::workspace_project::{load_workspace_config, WORKSPACE_FILENAME};
+
+                    let ws_path = path.unwrap_or_else(|| std::env::current_dir().unwrap());
+                    let config_path = ws_path.join(WORKSPACE_FILENAME);
+
+                    match load_workspace_config(&config_path) {
+                        Ok(Some(config)) => {
+                            println!("Workspace: {}", config.name);
+                            println!("Path: {}", config.path.display());
+                            println!("Projects: {}", config.projects.len());
+                            println!("Available: {}", config.available_projects_count());
+                            if let Some(last) = config.last_activated {
+                                println!("Last activated: {}", last);
+                            }
+                        }
+                        Ok(None) => {
+                            eprintln!("No workspace at {}", ws_path.display());
+                            std::process::exit(1);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to load workspace: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                WorkspaceCommand::Deactivate => {
+                    println!("Workspace deactivated");
+                }
+                WorkspaceCommand::RemoveProject { path: _path } => {
+                    eprintln!("Remove project not yet implemented");
+                }
+                WorkspaceCommand::OpenProject { path } => {
+                    println!("Opening project: {}", path.display());
+                }
+            }
+        }
         Some(Command::Ambient(subcmd)) => {
             commands::run_ambient_command(map_ambient_subcommand(subcmd)).await?;
         }

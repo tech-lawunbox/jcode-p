@@ -11,3 +11,5 @@ pub mod selfdev;
 pub mod startup;
 pub mod terminal;
 pub mod tui_launch;
+pub mod workspace;
+pub mod workspace_project;
