@@ -150,6 +150,15 @@ const STATUS_PREVIEW_ACCENTS: [[f32; 3]; 8] = [
     [0.810, 0.760, 0.520],
 ];
 
+/// Detect workspace by searching from current directory up
+fn detect_workspace() -> Option<std::path::PathBuf> {
+    let current = std::env::current_dir().ok()?;
+    crate::workspace_project::find_workspace_config(&current)
+        .ok()
+        .flatten()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+}
+
 const SHADER: &str = r#"
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -222,6 +231,12 @@ async fn run() -> Result<()> {
     } else {
         fresh_single_session_app()
     };
+    // Load workspace on startup if detected
+    if let Some(ws_path) = detect_workspace() {
+        if let Ok(ws) = crate::workspace_state::load_workspace(&ws_path) {
+            app.set_active_workspace(ws);
+        }
+    }
     startup_trace.mark("app state initialized");
     window.set_title(&app.status_title());
     let mut canvas = Canvas::new(window, startup_trace).await?;
@@ -1342,6 +1357,12 @@ impl DesktopApp {
         match self {
             Self::SingleSession(app) => app.live_session_id.clone(),
             Self::Workspace(_) => None,
+        }
+    }
+
+    fn set_active_workspace(&mut self, ws: crate::workspace_state::ActiveWorkspace) {
+        if let DesktopApp::Workspace(workspace) = self {
+            workspace.active_workspace = Some(ws);
         }
     }
 
