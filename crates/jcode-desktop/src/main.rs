@@ -10,6 +10,7 @@ mod workspace;
 mod workspace_cli;
 mod workspace_integration_test;
 mod workspace_project;
+mod workspace_state;
 
 use animation::{AnimatedViewport, FocusPulse, VisibleColumnLayout, WorkspaceRenderLayout};
 use anyhow::{Context, Result};
