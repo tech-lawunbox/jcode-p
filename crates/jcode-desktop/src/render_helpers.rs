@@ -6,6 +6,12 @@ const STREAMING_PULSE_ACTIVE: [f32; 4] = [0.030, 0.125, 0.080, 1.0];
 const STREAMING_DOT_SIZE: f32 = 6.0;
 const STREAMING_DOT_LEFT_PADDING: f32 = 12.0;
 
+/// Memory state badge
+const MEMORY_BADGE_SIZE: f32 = 8.0;
+const MEMORY_BADGE_RIGHT_PADDING: f32 = 60.0; // before model name area
+const MEMORY_BADGE_IDLE: [f32; 4] = [0.5, 0.5, 0.5, 0.4];
+const MEMORY_BADGE_ACTIVE: [f32; 4] = [0.030, 0.125, 0.080, 1.0];
+
 pub(crate) fn push_panel_title(
     vertices: &mut Vec<Vertex>,
     title: &str,
@@ -431,6 +437,33 @@ pub(crate) fn push_streaming_indicator(
             height: STREAMING_DOT_SIZE,
         },
         STREAMING_DOT_SIZE / 2.0, // fully rounded
+        color,
+        size,
+    );
+}
+
+/// Renders a small memory state badge (dot) showing memory system activity.
+/// Position is relative to the right side of status bar, before model name.
+pub(crate) fn push_memory_badge(
+    vertices: &mut Vec<Vertex>,
+    is_active: bool, // MemoryActivity::is_processing()
+    status_rect: Rect,
+    size: PhysicalSize<u32>,
+) {
+    let x = status_rect.x + status_rect.width - MEMORY_BADGE_RIGHT_PADDING;
+    let y = status_rect.y + (status_rect.height - MEMORY_BADGE_SIZE) / 2.0;
+
+    let color = if is_active { MEMORY_BADGE_ACTIVE } else { MEMORY_BADGE_IDLE };
+
+    push_rounded_rect(
+        vertices,
+        Rect {
+            x,
+            y,
+            width: MEMORY_BADGE_SIZE,
+            height: MEMORY_BADGE_SIZE,
+        },
+        MEMORY_BADGE_SIZE / 2.0,
         color,
         size,
     );
