@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const WORKSPACE_FILENAME: &str = ".workspace";
@@ -231,5 +230,66 @@ mod tests {
         assert!(config.projects.is_empty());
         let md = generate_workspace_md_template(&config);
         assert!(md.contains("No projects added yet"));
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_save_and_load_workspace() {
+        let temp_dir = std::env::temp_dir().join("workspace_persist_test");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let mut config = WorkspaceConfig::new(
+            "Test".to_string(),
+            temp_dir.clone(),
+        );
+        config.add_project("backend".to_string(), temp_dir.join("backend"));
+
+        let config_path = temp_dir.join(".workspace");
+        save_workspace_config(&config, &config_path).unwrap();
+
+        let loaded = load_workspace_config(&config_path).unwrap().unwrap();
+        assert_eq!(loaded.name, "Test");
+        assert_eq!(loaded.projects.len(), 1);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn test_load_nonexistent_returns_none() {
+        let result = load_workspace_config(Path::new("/nonexistent/.workspace"));
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_save_updates_last_activated() {
+        let temp_dir = std::env::temp_dir().join("workspace_activated_test");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let config = WorkspaceConfig::new(
+            "Test".to_string(),
+            temp_dir.clone(),
+        );
+        let config_path = temp_dir.join(".workspace");
+
+        save_workspace_config(&config, &config_path).unwrap();
+        let loaded1 = load_workspace_config(&config_path).unwrap().unwrap();
+        assert!(loaded1.last_activated.is_none());
+
+        // Simulate activation
+        let mut loaded2 = load_workspace_config(&config_path).unwrap().unwrap();
+        loaded2.mark_activated();
+        save_workspace_config(&loaded2, &config_path).unwrap();
+
+        let loaded3 = load_workspace_config(&config_path).unwrap().unwrap();
+        assert!(loaded3.last_activated.is_some());
+
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 }

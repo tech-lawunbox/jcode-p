@@ -8,4 +8,5 @@ publish = false
 chrono = { version = "0.4", features = ["serde"] }
 jcode-core = { path = "../jcode-core" }
 serde = { version = "1", features = ["derive"] }
+rand = "0.8"
 serde_json = "1"
