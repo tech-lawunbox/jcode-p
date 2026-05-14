@@ -201,6 +201,21 @@ impl Agent {
     pub fn new(provider: Arc<dyn Provider>, registry: Registry) -> Self {
         let mut agent = Self::build_base(provider, registry, Session::create(None, None), None);
         agent.session.mark_active();
+
+        // Apply config default model if set (handles OpenRouter profiles, provider hints, etc.)
+        let cfg = crate::config::config();
+        if let Some(ref default_model) = cfg.provider.default_model {
+            if let Err(e) = crate::provider::set_model_with_auth_refresh(
+                agent.provider.as_ref(),
+                default_model,
+            ) {
+                logging::warn(&format!(
+                    "Failed to apply default model '{}': {}",
+                    default_model, e
+                ));
+            }
+        }
+
         agent.session.model = Some(agent.provider.model());
         agent.session.provider_key =
             crate::session::derive_session_provider_key(agent.provider.name());
@@ -236,8 +251,24 @@ impl Agent {
                     "Failed to restore session model '{}': {}",
                     model, e
                 ));
+                // Model restore failed - sync session.model to provider's actual model
+                // to avoid sending incompatible model in future requests
+                agent.session.model = Some(agent.provider.model());
             }
         } else {
+            // New session - apply config default model if set
+            let cfg = crate::config::config();
+            if let Some(ref default_model) = cfg.provider.default_model {
+                if let Err(e) = crate::provider::set_model_with_auth_refresh(
+                    agent.provider.as_ref(),
+                    default_model,
+                ) {
+                    logging::warn(&format!(
+                        "Failed to apply default model '{}': {}",
+                        default_model, e
+                    ));
+                }
+            }
             agent.session.model = Some(agent.provider.model());
         }
         agent.restore_reasoning_effort_from_session();

@@ -433,6 +433,9 @@ impl Agent {
                     "Failed to restore session model '{}': {}",
                     model, e
                 ));
+                // Model restore failed - sync session.model to provider's actual model
+                // to avoid sending incompatible model in future requests
+                self.session.model = Some(self.provider.model());
             }
         } else {
             self.session.model = Some(self.provider.model());

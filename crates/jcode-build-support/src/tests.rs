@@ -364,3 +364,50 @@ fn shared_server_candidate_prefers_approved_channel_over_current() {
         assert_eq!(selected, approved);
     });
 }
+
+#[test]
+fn test_is_exact_jcode_repo_root_at_root() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path().join("jcode-repo");
+
+    std::fs::create_dir_all(repo.join(".git")).expect("create .git");
+    std::fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"jcode\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write Cargo.toml");
+
+    assert!(is_exact_jcode_repo_root(&repo), "repo root should be detected as exact root");
+}
+
+#[test]
+fn test_is_exact_jcode_repo_root_in_subdirectory() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path().join("jcode-repo");
+    let subdir = repo.join("src").join("cli");
+
+    std::fs::create_dir_all(repo.join(".git")).expect("create .git");
+    std::fs::write(
+        repo.join("Cargo.toml"),
+        "[package]\nname = \"jcode\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::create_dir_all(&subdir).expect("create nested dirs");
+
+    assert!(!is_exact_jcode_repo_root(&subdir), "subdirectory should NOT be detected as exact root");
+    // is_jcode_repo only checks the exact directory, not parents
+    assert!(!is_jcode_repo(&subdir), "subdirectory itself is not the repo root");
+    // But find_repo_in_ancestors will find it
+    assert!(find_repo_in_ancestors(&subdir).is_some(), "subdirectory should find repo in ancestors");
+}
+
+#[test]
+fn test_is_exact_jcode_repo_root_not_in_repo() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let not_repo = temp.path().join("not-jcode");
+
+    std::fs::create_dir_all(&not_repo).expect("create dir");
+
+    assert!(!is_exact_jcode_repo_root(&not_repo), "non-repo directory should not be detected as repo root");
+    assert!(!is_jcode_repo(&not_repo), "non-repo directory should not be detected as jcode repo");
+}

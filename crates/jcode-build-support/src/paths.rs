@@ -448,3 +448,21 @@ pub fn is_jcode_repo(dir: &Path) -> bool {
 
     false
 }
+
+/// Check if a directory is exactly the jcode repo root (not a subdirectory)
+pub fn is_exact_jcode_repo_root(dir: &Path) -> bool {
+    // Must be a jcode repo
+    if !is_jcode_repo(dir) {
+        return false;
+    }
+    
+    // Must not have a parent that is also the jcode repo
+    // (i.e., we're at the root, not in a subdirectory)
+    if let Some(parent) = dir.parent() {
+        if is_jcode_repo(parent) {
+            return false;
+        }
+    }
+    
+    true
+}
