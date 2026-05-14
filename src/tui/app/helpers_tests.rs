@@ -86,7 +86,7 @@ fn detected_resume_terminal_recognizes_tmux_session() {
 #[test]
 fn resume_terminal_candidates_include_tmux_once_when_requested() {
     let _guard = EnvVarGuard::set_value("JCODE_TERMINAL", "tmux");
-    let candidates = super::resume_terminal_candidates_unix();
+    let candidates = crate::terminal_launch::resume_terminal_candidates();
     assert_eq!(candidates.first().map(String::as_str), Some("tmux"));
     assert_eq!(
         candidates

@@ -22,6 +22,7 @@
 // The agent's actual findings are LOST unless it explicitly calls `swarm action=report`.
 
 // SwarmMember, HashMap, Instant, mpsc are imported from parent module (comm_control_tests.rs)
+use jcode_swarm_core::append_swarm_completion_report_instructions;
 
 // ============================================================================
 // TEST 1: Verify completion report instructions are injected
