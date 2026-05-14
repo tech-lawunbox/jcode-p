@@ -100,6 +100,15 @@ fn macos_should_try_app_terminal(term: &str) -> bool {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn running_inside_ghostty() -> bool {
+    std::env::var("TERM_PROGRAM")
+        .ok()
+        .map(|v| v.eq_ignore_ascii_case("ghostty"))
+        .unwrap_or(false)
+        || std::env::var("GHOSTTY_RESOURCES_DIR").is_ok()
+}
+
 #[cfg(unix)]
 pub fn detected_resume_terminal() -> Option<String> {
     if std::env::var("HANDTERM_SESSION").is_ok() || std::env::var("HANDTERM_PID").is_ok() {
@@ -120,6 +129,9 @@ pub fn detected_resume_terminal() -> Option<String> {
     }
     if std::env::var("ALACRITTY_WINDOW_ID").is_ok() {
         return Some("alacritty".to_string());
+    }
+    if std::env::var("TMUX").is_ok() {
+        return Some("tmux".to_string());
     }
 
     #[cfg(target_os = "macos")]
@@ -177,6 +189,7 @@ pub fn resume_terminal_candidates() -> Vec<String> {
     {
         for term in [
             "ghostty",
+            "tmux",
             "kitty",
             "wezterm",
             "alacritty",
@@ -193,6 +206,7 @@ pub fn resume_terminal_candidates() -> Vec<String> {
     {
         for term in [
             "handterm",
+            "tmux",
             "kitty",
             "wezterm",
             "alacritty",
@@ -267,6 +281,35 @@ fn build_spawn_command(term: &str, command: &TerminalCommand, cwd: &Path) -> Opt
             cmd.args(["--backend", "gpu", "--exec", &shell]);
         }
         #[cfg(target_os = "macos")]
+        "ghostty" if running_inside_ghostty() => {
+            let shell = shell_command(&command_parts(command));
+            let cwd_str = cwd.display().to_string();
+            let cwd_escaped = cwd_str.replace('\\', "\\\\").replace('"', "\\\"");
+            let shell_escaped = shell.replace('\\', "\\\\").replace('"', "\\\"");
+            let script = format!(
+                r#"tell application "Ghostty"
+    set cfg to new surface configuration
+    set initial working directory of cfg to "{cwd_escaped}"
+    set command of cfg to "/bin/bash"
+    
+    -- Get the rightmost pane of current layout to stack splits vertically
+    set paneCount to count of panes of front window
+    set rightPane to pane paneCount of front window
+    
+    -- Split from rightmost pane (vertical stack on right side)
+    set newPane to split rightPane direction right with configuration cfg
+    delay 0.5
+    input text "exec {shell_escaped}" to newPane
+    send key "enter" to newPane
+end tell"#
+            );
+            cmd = Command::new("osascript");
+            cmd.args(["-e", &script]);
+            if command.fresh_spawn {
+                cmd.env("JCODE_FRESH_SPAWN", "1");
+            }
+        }
+        #[cfg(target_os = "macos")]
         "ghostty" => {
             let shell = shell_command(&command_parts(command));
             cmd = Command::new("open");
@@ -302,6 +345,14 @@ fn build_spawn_command(term: &str, command: &TerminalCommand, cwd: &Path) -> Opt
         "gnome-terminal" => {
             cmd.arg("--title").arg(title);
             cmd.arg("--").arg(&command.program).args(&command.args);
+        }
+        "tmux" => {
+            // tmux split-window [-d] [-c pane-create-path] [shell-command]
+            // The command should be: tmux split-window -d -c <cwd> -- <program> <args...>
+            let shell = shell_command(&command_parts(command));
+            cmd.args(["split-window", "-d", "-c"])
+                .arg(cwd.as_os_str())
+                .args(["--", "bash", "-c", &shell]);
         }
         "konsole" | "xterm" | "foot" => {
             cmd.args(["-e"]).arg(&command.program).args(&command.args);

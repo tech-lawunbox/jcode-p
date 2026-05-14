@@ -9,12 +9,22 @@ fn desired_nofile_soft_limit_only_raises_when_possible() {
 
 #[cfg(unix)]
 #[test]
-fn spawn_detached_creates_new_session() {
+fn spawn_detached_skips_setsid_when_in_tmux() {
+    use std::sync::Mutex;
     use tempfile::NamedTempFile;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    let _guard = ENV_LOCK.lock().expect("lock env");
+    let parent_sid = unsafe { libc::getsid(0) };
+
+    // Set TMUX env var to simulate being inside tmux
+    unsafe {
+        std::env::set_var("TMUX", "test,123,456");
+    }
 
     let output = NamedTempFile::new().expect("temp file");
     let output_path = output.path().to_string_lossy().to_string();
-    let parent_sid = unsafe { libc::getsid(0) };
 
     let mut cmd = std::process::Command::new("sh");
     cmd.arg("-c")
@@ -33,14 +43,63 @@ fn spawn_detached_creates_new_session() {
         .parse::<u32>()
         .expect("parse child sid");
 
+    // When in tmux, setsid() is skipped, so child stays in parent's session
+    assert_eq!(
+        child_sid as i32, parent_sid,
+        "when in tmux, detached child should share parent's session (no setsid)"
+    );
+
+    // Cleanup
+    unsafe {
+        std::env::remove_var("TMUX");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn spawn_detached_creates_new_session_when_not_in_tmux() {
+    use std::sync::Mutex;
+    use tempfile::NamedTempFile;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    let _guard = ENV_LOCK.lock().expect("lock env");
+    let parent_sid = unsafe { libc::getsid(0) };
+
+    // Ensure TMUX is not set
+    unsafe {
+        std::env::remove_var("TMUX");
+    }
+
+    let output = NamedTempFile::new().expect("temp file");
+    let output_path = output.path().to_string_lossy().to_string();
+
+    let mut cmd = std::process::Command::new("sh");
+    cmd.arg("-c")
+        .arg("ps -o sid= -p $$ > \"$JCODE_TEST_OUTPUT\"")
+        .env("JCODE_TEST_OUTPUT", &output_path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    let mut child = super::spawn_detached(&mut cmd).expect("spawn detached child");
+    let status = child.wait().expect("wait for child");
+    assert!(status.success(), "child should exit successfully");
+
+    let child_sid = std::fs::read_to_string(&output_path)
+        .expect("read child sid")
+        .trim()
+        .parse::<u32>()
+        .expect("parse child sid");
+
+    // Outside tmux, setsid() is called, so child leads its own session
     assert_eq!(
         child_sid,
         child.id(),
-        "detached child should lead its own session"
+        "when not in tmux, detached child should lead its own session"
     );
     assert_ne!(
         child_sid as i32, parent_sid,
-        "detached child should not share parent session"
+        "when not in tmux, detached child should not share parent session"
     );
 }
 

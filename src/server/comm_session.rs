@@ -30,8 +30,15 @@ fn create_visible_spawn_session(
     selfdev_requested: bool,
 ) -> anyhow::Result<(String, PathBuf)> {
     let cwd = working_dir
+        .filter(|dir| !dir.trim().is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Cannot spawn visible session: no working directory resolved. \
+             The coordinator's working_dir was not available via the spawn request \
+             or server-side fallback."
+            )
+        })?;
 
     let mut session = Session::create(None, None);
     session.working_dir = Some(cwd.display().to_string());
@@ -61,16 +68,22 @@ async fn resolve_spawn_working_dir(
 
     if let Some(agent_dir) = {
         let agent_sessions = sessions.read().await;
-        agent_sessions.get(req_session_id).and_then(|agent| {
+        let lock_result = agent_sessions.get(req_session_id).and_then(|agent| {
             agent
                 .try_lock()
                 .ok()
                 .and_then(|agent_guard| agent_guard.working_dir().map(str::to_string))
-        })
-    } {
-        if !agent_dir.trim().is_empty() {
-            return Some(agent_dir);
+        });
+        if lock_result.is_none() && agent_sessions.contains_key(req_session_id) {
+            crate::logging::warn(&format!(
+                "resolve_spawn_working_dir: try_lock failed for session {}; falling back to SwarmMember.working_dir",
+                req_session_id
+            ));
         }
+        lock_result
+    } && !agent_dir.trim().is_empty()
+    {
+        return Some(agent_dir);
     }
 
     swarm_members
@@ -80,6 +93,35 @@ async fn resolve_spawn_working_dir(
         .and_then(|member| member.working_dir.as_ref())
         .map(|dir| dir.display().to_string())
         .filter(|dir| !dir.trim().is_empty())
+}
+
+fn spawn_mutation_key(
+    req_session_id: &str,
+    swarm_id: &str,
+    working_dir: &Option<String>,
+    initial_message: &Option<String>,
+    request_nonce: &Option<String>,
+    run_id: &Option<String>,
+) -> String {
+    let request_nonce = request_nonce
+        .as_deref()
+        .map(str::trim)
+        .filter(|nonce| !nonce.is_empty());
+    let components = if let Some(request_nonce) = request_nonce {
+        vec![
+            swarm_id.to_string(),
+            format!("nonce:{request_nonce}"),
+            format!("run:{}", run_id.as_deref().unwrap_or_default()),
+        ]
+    } else {
+        vec![
+            swarm_id.to_string(),
+            working_dir.clone().unwrap_or_default(),
+            initial_message.clone().unwrap_or_default(),
+            run_id.clone().unwrap_or_default(),
+        ]
+    };
+    request_key(req_session_id, "spawn", &components)
 }
 
 fn spawn_visible_session_window(
@@ -164,6 +206,7 @@ async fn register_visible_spawned_member(
     working_dir: Option<&str>,
     has_startup_message: bool,
     report_back_to_session_id: Option<&str>,
+    run_id: Option<&str>,
     swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
     swarms_by_id: &Arc<RwLock<HashMap<String, HashSet<String>>>>,
     event_history: &Arc<RwLock<std::collections::VecDeque<SwarmEvent>>>,
@@ -196,6 +239,7 @@ async fn register_visible_spawned_member(
                 detail,
                 friendly_name: Some(friendly_name),
                 report_back_to_session_id: report_back_to_session_id.map(str::to_string),
+                run_id: run_id.map(str::to_string),
                 latest_completion_report: None,
                 role: "agent".to_string(),
                 joined_at: now,
@@ -236,6 +280,8 @@ pub(super) async fn spawn_swarm_agent(
     swarm_id: &str,
     working_dir: Option<String>,
     initial_message: Option<String>,
+    run_id: Option<String>,
+    explicit_swarm_id: Option<String>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
     provider_template: &Arc<dyn Provider>,
@@ -249,8 +295,35 @@ pub(super) async fn spawn_swarm_agent(
     mcp_pool: &Arc<crate::mcp::SharedMcpPool>,
     soft_interrupt_queues: &SessionInterruptQueues,
 ) -> anyhow::Result<String> {
-    let resolved_working_dir =
-        resolve_spawn_working_dir(working_dir, req_session_id, sessions, swarm_members).await;
+    // Get coordinator's working_dir from agent session before spawn resolution.
+    // This ensures spawned agents inherit the coordinator's actual working directory
+    // rather than falling back to a stale SwarmMember.working_dir or process cwd.
+    let coordinator_working_dir = {
+        let sessions_guard = sessions.read().await;
+        let result = sessions_guard
+            .get(req_session_id)
+            .and_then(|agent| agent.try_lock().ok())
+            .and_then(|guard| guard.working_dir().map(String::from));
+        if result.is_none() && sessions_guard.contains_key(req_session_id) {
+            crate::logging::warn(&format!(
+                "spawn_swarm_agent: try_lock failed for coordinator {}; working_dir will use request param or SwarmMember fallback",
+                req_session_id
+            ));
+        }
+        result
+    };
+    let resolved_working_dir = resolve_spawn_working_dir(
+        working_dir.or(coordinator_working_dir),
+        req_session_id,
+        sessions,
+        swarm_members,
+    )
+    .await
+    .filter(|dir| !dir.trim().is_empty())
+    .ok_or_else(|| anyhow::anyhow!(
+        "Cannot spawn swarm agent: no working directory resolved for coordinator {req_session_id}. \
+         Spawn requests must carry the coordinator working_dir; refusing to fall back to the server process cwd."
+    ))?;
     let coordinator_model = {
         let agent_sessions = sessions.read().await;
         agent_sessions.get(req_session_id).and_then(|agent| {
@@ -283,7 +356,7 @@ pub(super) async fn spawn_swarm_agent(
         .map(append_swarm_completion_report_instructions);
 
     let visible_spawn = prepare_visible_spawn_session(
-        resolved_working_dir.as_deref(),
+        Some(resolved_working_dir.as_str()),
         spawn_model.as_deref(),
         coordinator_is_canary,
         startup_message.as_deref(),
@@ -293,10 +366,9 @@ pub(super) async fn spawn_swarm_agent(
     let (new_session_id, is_headless_fallback) = match visible_spawn {
         Ok((new_session_id, true)) => Ok((new_session_id, false)),
         Ok((_, false)) | Err(_) => {
-            let cmd = if let Some(ref dir) = resolved_working_dir {
-                format!("create_session:{dir}")
-            } else {
-                "create_session".to_string()
+            let cmd = match &explicit_swarm_id {
+                Some(sid) => format!("create_session:{resolved_working_dir}|{sid}"),
+                None => format!("create_session:{resolved_working_dir}"),
             };
             create_headless_session(
                 sessions,
@@ -312,6 +384,7 @@ pub(super) async fn spawn_swarm_agent(
                 spawn_model.clone(),
                 Some(Arc::clone(mcp_pool)),
                 Some(req_session_id.to_string()),
+                run_id.clone(),
             )
             .await
             .and_then(|result_json| {
@@ -352,9 +425,10 @@ pub(super) async fn spawn_swarm_agent(
         register_visible_spawned_member(
             &new_session_id,
             swarm_id,
-            resolved_working_dir.as_deref(),
+            Some(resolved_working_dir.as_str()),
             startup_message.is_some(),
             Some(req_session_id),
+            run_id.as_deref(),
             swarm_members,
             swarms_by_id,
             event_history,
@@ -397,6 +471,7 @@ pub(super) async fn spawn_swarm_agent(
             let event_history2 = Arc::clone(event_history);
             let event_counter2 = Arc::clone(event_counter);
             let swarm_event_tx2 = swarm_event_tx.clone();
+            let sessions_for_alert = Arc::clone(sessions);
             tokio::spawn(async move {
                 update_member_status(
                     &sid_clone,
@@ -445,6 +520,8 @@ pub(super) async fn spawn_swarm_agent(
                     Some(&event_history2),
                     Some(&event_counter2),
                     Some(&swarm_event_tx2),
+                    Some(&sessions_for_alert),
+                    Some(true), // stop_worker_on_completion - headless spawned agent done
                 )
                 .await;
             });
@@ -461,6 +538,8 @@ pub(super) async fn handle_comm_spawn(
     working_dir: Option<String>,
     initial_message: Option<String>,
     request_nonce: Option<String>,
+    run_id: Option<String>,
+    swarm_id: Option<String>,
     client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
@@ -494,15 +573,13 @@ pub(super) async fn handle_comm_spawn(
         None => return,
     };
 
-    let mutation_key = request_key(
+    let mutation_key = spawn_mutation_key(
         &req_session_id,
-        "spawn",
-        &[
-            swarm_id.clone(),
-            working_dir.clone().unwrap_or_default(),
-            initial_message.clone().unwrap_or_default(),
-            request_nonce.clone().unwrap_or_default(),
-        ],
+        &swarm_id,
+        &working_dir,
+        &initial_message,
+        &request_nonce,
+        &run_id,
     );
     let Some(mutation_state) = begin_or_replay(
         swarm_mutation_runtime,
@@ -522,6 +599,8 @@ pub(super) async fn handle_comm_spawn(
         &swarm_id,
         working_dir,
         initial_message,
+        run_id,
+        Some(swarm_id.clone()),
         sessions,
         global_session_id,
         provider_template,
@@ -917,18 +996,19 @@ async fn require_coordinator_swarm(
         (swarm_id, is_coordinator, coordinator_is_stale)
     };
 
-    if !is_coordinator && coordinator_is_stale {
-        if let Some(ref swarm_id) = swarm_id {
-            let mut coordinators = swarm_coordinators.write().await;
-            coordinators.insert(swarm_id.clone(), req_session_id.to_string());
-            drop(coordinators);
-            let mut members = swarm_members.write().await;
-            if let Some(member) = members.get_mut(req_session_id) {
-                member.role = "coordinator".to_string();
-            }
-            return Some(swarm_id.clone());
-        };
-    }
+    if !is_coordinator
+        && coordinator_is_stale
+        && let Some(ref swarm_id) = swarm_id
+    {
+        let mut coordinators = swarm_coordinators.write().await;
+        coordinators.insert(swarm_id.clone(), req_session_id.to_string());
+        drop(coordinators);
+        let mut members = swarm_members.write().await;
+        if let Some(member) = members.get_mut(req_session_id) {
+            member.role = "coordinator".to_string();
+        }
+        return Some(swarm_id.clone());
+    };
 
     if !is_coordinator {
         let _ = client_event_tx.send(ServerEvent::Error {
@@ -948,6 +1028,37 @@ async fn require_coordinator_swarm(
                 retry_after_secs: None,
             });
             None
+        }
+    }
+}
+
+/// Clean up a swarm worker session after it reports completion to the coordinator.
+/// This removes the agent from sessions and removes the member from the swarm,
+/// but does NOT send a SessionCloseRequested event (the worker has already finished).
+pub(super) async fn cleanup_swarm_worker_session(
+    target_session: &str,
+    _coordinator_session_id: Option<&str>,
+    swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
+    swarms_by_id: &Arc<RwLock<HashMap<String, HashSet<String>>>>,
+) {
+    // Remove from swarm members (but not from sessions - let the worker close naturally)
+    let removed_swarm_id = {
+        let mut members = swarm_members.write().await;
+        if let Some(member) = members.remove(target_session) {
+            member.swarm_id
+        } else {
+            None
+        }
+    };
+
+    if let Some(ref swarm_id) = removed_swarm_id {
+        // Remove from swarms_by_id
+        let mut swarms = swarms_by_id.write().await;
+        if let Some(members_set) = swarms.get_mut(swarm_id) {
+            members_set.remove(target_session);
+            if members_set.is_empty() {
+                swarms.remove(swarm_id);
+            }
         }
     }
 }

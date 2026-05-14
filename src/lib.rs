@@ -5,6 +5,7 @@
     clippy::unnecessary_sort_by,
     clippy::useless_conversion
 )]
+#![recursion_limit = "512"]
 
 pub mod agent;
 pub mod ambient;
@@ -18,6 +19,7 @@ pub mod bus;
 pub mod cache_tracker;
 pub mod catchup;
 pub mod channel;
+pub mod clean_code;
 pub mod cli;
 pub mod compaction;
 pub mod config;
@@ -33,6 +35,7 @@ pub mod env;
 pub mod gateway;
 pub mod gmail;
 pub mod goal;
+pub mod harness_events;
 pub mod id;
 pub mod import;
 pub mod logging;
@@ -43,6 +46,7 @@ pub mod memory_agent;
 pub mod memory_graph;
 pub mod memory_log;
 pub mod memory_types;
+pub mod memory_wiki;
 pub mod message;
 pub mod network_retry;
 pub mod notifications;
@@ -52,6 +56,7 @@ pub mod plan;
 pub mod platform;
 pub mod process_memory;
 pub mod process_title;
+pub mod project_init;
 pub mod prompt;
 pub mod protocol;
 pub mod provider;
@@ -67,6 +72,11 @@ pub mod setup_hints;
 pub mod side_panel;
 pub mod sidecar;
 pub mod skill;
+pub mod skill_import;
+pub mod skill_pack;
+pub mod skill_router;
+pub mod skill_scope;
+pub mod skill_validation;
 pub mod soft_interrupt_store;
 pub mod startup_profile;
 pub mod stdin_detect;
@@ -81,6 +91,7 @@ pub mod transport;
 pub mod tui;
 pub mod update;
 pub mod usage;
+pub mod user_attention;
 pub mod util;
 pub mod video_export;
 

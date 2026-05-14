@@ -32,20 +32,28 @@ pub(super) async fn create_headless_session(
     model_override: Option<String>,
     mcp_pool: Option<Arc<crate::mcp::SharedMcpPool>>,
     report_back_to_session_id: Option<String>,
+    run_id: Option<String>,
 ) -> Result<String> {
     let memory_enabled = crate::config::config().features.memory;
     let swarm_enabled = crate::config::config().features.swarm;
 
-    let working_dir = if let Some(path_str) = command.strip_prefix("create_session:") {
-        let path_str = path_str.trim();
-        if !path_str.is_empty() {
-            Some(std::path::PathBuf::from(path_str))
+    // Parse command format: "create_session:{dir}|{swarm_id}" or "create_session:{dir}"
+    let (working_dir, explicit_swarm_id) =
+        if let Some(cmd_str) = command.strip_prefix("create_session:") {
+            let parts: Vec<&str> = cmd_str.trim().splitn(2, '|').collect();
+            let dir = if !parts[0].is_empty() {
+                Some(std::path::PathBuf::from(parts[0]))
+            } else {
+                None
+            };
+            let swarm_id = parts
+                .get(1)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            (dir, swarm_id)
         } else {
-            None
-        }
-    } else {
-        None
-    };
+            (None, None)
+        };
 
     let provider = provider_template.fork();
     let registry = Registry::new(provider.clone()).await;
@@ -71,12 +79,6 @@ pub(super) async fn create_headless_session(
             "Failed to set headless session model override '{}': {}",
             model, e
         ));
-    }
-
-    if let Some(ref dir) = working_dir
-        && let Some(path) = dir.to_str()
-    {
-        new_agent.set_working_dir(path);
     }
 
     new_agent.set_debug(true);
@@ -116,7 +118,8 @@ pub(super) async fn create_headless_session(
     }
 
     let swarm_id = if swarm_enabled {
-        swarm_id_for_dir(working_dir.clone())
+        // Prefer explicit_swarm_id from command, fall back to dir-derived swarm_id
+        explicit_swarm_id.or_else(|| swarm_id_for_dir(working_dir.clone()))
     } else {
         None
     };
@@ -147,6 +150,7 @@ pub(super) async fn create_headless_session(
                 detail: None,
                 friendly_name: Some(friendly_name.clone()),
                 report_back_to_session_id: report_back_to_session_id.clone(),
+                run_id: run_id.clone(),
                 latest_completion_report: None,
                 role: "agent".to_string(),
                 joined_at: now,
@@ -182,6 +186,7 @@ pub(super) async fn create_headless_session(
         "session_id": client_session_id,
         "working_dir": working_dir,
         "swarm_id": swarm_id,
+        "run_id": run_id,
         "friendly_name": friendly_name,
         "is_canary": selfdev_requested,
     })

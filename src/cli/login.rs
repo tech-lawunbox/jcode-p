@@ -151,6 +151,18 @@ struct ScriptableAuthSuccess {
     email: Option<String>,
 }
 
+impl ScriptableAuthSuccess {
+    fn redacted_for_output(mut self) -> Self {
+        if self.account_label.is_some() {
+            self.account_label = Some("[redacted]".to_string());
+        }
+        if self.email.is_some() {
+            self.email = Some("[redacted]".to_string());
+        }
+        self
+    }
+}
+
 #[allow(deprecated)]
 pub async fn run_login(
     choice: &ProviderChoice,
@@ -467,7 +479,7 @@ fn login_openai_api_key_flow() -> Result<()> {
 
 async fn login_claude_flow(requested_label: Option<&str>, no_browser: bool) -> Result<()> {
     let label = auth::claude::login_target_label(requested_label)?;
-    eprintln!("Logging in to Claude (account: {})...", label);
+    eprintln!("Logging in to Claude (account [redacted])...");
     let tokens = auth::oauth::login_claude(no_browser).await?;
     auth::oauth::save_claude_tokens_for_account(&tokens, &label)?;
     let profile_email =
@@ -482,13 +494,9 @@ async fn login_claude_flow(requested_label: Option<&str>, no_browser: bool) -> R
             }
         };
     eprintln!("Successfully logged in to Claude!");
-    eprintln!(
-        "Account '{}' stored at {}",
-        label,
-        auth::claude::jcode_path()?.display()
-    );
-    if let Some(email) = profile_email {
-        eprintln!("Profile email: {}", email);
+    eprintln!("Account [redacted] stored in the local jcode auth store");
+    if profile_email.is_some() {
+        eprintln!("Profile email: [redacted]");
     }
     crate::telemetry::record_auth_success("claude", "oauth");
     Ok(())
@@ -496,16 +504,10 @@ async fn login_claude_flow(requested_label: Option<&str>, no_browser: bool) -> R
 
 async fn login_openai_flow(requested_label: Option<&str>, no_browser: bool) -> Result<()> {
     let label = auth::codex::login_target_label(requested_label)?;
-    eprintln!("Logging in to OpenAI/Codex (account: {})...", label);
+    eprintln!("Logging in to OpenAI/Codex (account [redacted])...");
     let tokens = auth::oauth::login_openai(no_browser).await?;
     auth::oauth::save_openai_tokens_for_account(&tokens, &label)?;
-    eprintln!(
-        "Successfully logged in to OpenAI! Account '{}' saved to {}",
-        label,
-        crate::storage::jcode_dir()?
-            .join("openai-auth.json")
-            .display()
-    );
+    eprintln!("Successfully logged in to OpenAI! Account [redacted] saved locally.");
     crate::telemetry::record_auth_success("openai", "oauth");
     Ok(())
 }
@@ -743,7 +745,7 @@ fn login_openai_compatible_flow(
 
     eprintln!("Endpoint: {}", resolved.api_base);
     let auth_method = if resolved.requires_api_key {
-        eprintln!("API key env variable: {}\n", resolved.api_key_env);
+        eprintln!("API key env variable: [redacted]\n");
         let key = match options.openai_compatible_api_key.as_deref() {
             Some(value) => value.trim().to_string(),
             None => {
@@ -827,12 +829,10 @@ pub fn read_secret_line() -> Result<String> {
     }
 
     let was_raw = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
-    if !was_raw {
-        if terminal::enable_raw_mode().is_err() {
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            return Ok(input.trim().to_string());
-        }
+    if !was_raw && terminal::enable_raw_mode().is_err() {
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        return Ok(input.trim().to_string());
     }
 
     struct RawModeGuard(bool);
@@ -987,7 +987,7 @@ async fn login_copilot_device_flow(no_browser: bool) -> Result<()> {
 
     crate::auth::copilot::save_github_token(&token, &username)?;
 
-    eprintln!("  ✓ Authenticated as {} via GitHub Copilot", username);
+    eprintln!("  ✓ Authenticated as [redacted] via GitHub Copilot");
     crate::telemetry::record_auth_success("copilot", "oauth_device_code");
     Ok(())
 }
@@ -1012,11 +1012,11 @@ async fn login_antigravity_flow(no_browser: bool) -> Result<()> {
         "Tokens saved to {}",
         crate::auth::antigravity::tokens_path()?.display()
     );
-    if let Some(email) = tokens.email.as_deref() {
-        eprintln!("Google account: {}", email);
+    if tokens.email.is_some() {
+        eprintln!("Google account: [redacted]");
     }
-    if let Some(project_id) = tokens.project_id.as_deref() {
-        eprintln!("Resolved Antigravity project: {}", project_id);
+    if tokens.project_id.is_some() {
+        eprintln!("Resolved Antigravity project: [redacted]");
     }
     crate::telemetry::record_auth_success("antigravity", "oauth");
     Ok(())
@@ -1042,8 +1042,8 @@ async fn login_gemini_flow(no_browser: bool) -> Result<()> {
         "Tokens saved to {}",
         crate::auth::gemini::tokens_path()?.display()
     );
-    if let Some(email) = tokens.email.as_deref() {
-        eprintln!("Google account: {}", email);
+    if tokens.email.is_some() {
+        eprintln!("Google account: [redacted]");
     }
     crate::telemetry::record_auth_success("gemini", "oauth");
     Ok(())
@@ -1058,10 +1058,7 @@ async fn login_google_flow(no_browser: bool) -> Result<()> {
 
     let _creds = match auth::google::load_credentials() {
         Ok(creds) => {
-            eprintln!(
-                "✓ Google credentials found (client_id: {}...)\n",
-                &creds.client_id[..20.min(creds.client_id.len())]
-            );
+            eprintln!("✓ Google credentials found (client_id: [redacted])\n");
             creds
         }
         Err(_) => {
@@ -1092,7 +1089,7 @@ async fn login_google_flow(no_browser: bool) -> Result<()> {
                     }
 
                     eprintln!("\nPaste your Google OAuth Client Secret:");
-                    eprintln!("  (looks like: GOCSPX-...)\n");
+                    eprintln!("  (paste the value from your Google Cloud OAuth client)\n");
                     eprint!("> ");
                     io::stdout().flush()?;
                     let mut client_secret = String::new();
@@ -1269,8 +1266,8 @@ async fn login_google_flow(no_browser: bool) -> Result<()> {
     eprintln!("\n╔══════════════════════════════════════════╗");
     eprintln!("║  ✓ Gmail setup complete!                 ║");
     eprintln!("╚══════════════════════════════════════════╝\n");
-    if let Some(email) = &tokens.email {
-        eprintln!("  Account:      {}", email);
+    if tokens.email.is_some() {
+        eprintln!("  Account:      [redacted]");
     }
     eprintln!("  Access tier:  {}", tokens.tier.label());
     eprintln!(

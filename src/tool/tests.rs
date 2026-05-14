@@ -161,6 +161,7 @@ async fn test_batch_resolves_oauth_names() {
         stdin_request_tx: None,
         graceful_shutdown_signal: None,
         execution_mode: ToolExecutionMode::Direct,
+        swarm_id: None,
     };
 
     let result = registry

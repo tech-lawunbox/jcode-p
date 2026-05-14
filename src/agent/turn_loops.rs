@@ -437,6 +437,7 @@ impl Agent {
                             stdin_request_tx: self.stdin_request_tx.clone(),
                             graceful_shutdown_signal: Some(self.graceful_shutdown.clone()),
                             execution_mode: ToolExecutionMode::AgentTurn,
+                            swarm_id: self.session.swarm_id.clone(),
                         };
                         crate::telemetry::record_tool_call();
                         let tool_result = self.registry.execute(&tool_name, input, ctx).await;
@@ -747,6 +748,7 @@ impl Agent {
                     stdin_request_tx: self.stdin_request_tx.clone(),
                     graceful_shutdown_signal: Some(self.graceful_shutdown.clone()),
                     execution_mode: ToolExecutionMode::AgentTurn,
+                    swarm_id: self.session.swarm_id.clone(),
                 };
 
                 if trace {

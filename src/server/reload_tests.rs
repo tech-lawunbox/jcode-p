@@ -12,7 +12,7 @@ use tokio::sync::{RwLock, broadcast, mpsc, watch};
 fn set_member_status(members: &mut HashMap<String, SwarmMember>, session_id: &str, status: &str) {
     assert!(
         members.contains_key(session_id),
-        "missing test member {session_id}"
+        "missing expected test member"
     );
     if let Some(member) = members.get_mut(session_id) {
         member.status = status.to_string();
@@ -32,6 +32,7 @@ fn member(session_id: &str, status: &str) -> SwarmMember {
         detail: None,
         friendly_name: None,
         report_back_to_session_id: None,
+        run_id: None,
         latest_completion_report: None,
         role: "agent".to_string(),
         joined_at: Instant::now(),

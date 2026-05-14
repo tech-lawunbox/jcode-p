@@ -317,13 +317,9 @@ pub(super) async fn complete_scriptable_claude_login(
     )?;
     if !options.json {
         eprintln!("Successfully logged in to Claude!");
-        eprintln!(
-            "Account '{}' stored at {}",
-            account_label,
-            auth::claude::jcode_path()?.display()
-        );
-        if let Some(email) = profile_email {
-            eprintln!("Profile email: {}", email);
+        eprintln!("Account [redacted] stored in the local jcode auth store");
+        if profile_email.is_some() {
+            eprintln!("Profile email: [redacted]");
         }
     }
     Ok(LoginFlowOutcome::Completed)
@@ -375,11 +371,7 @@ pub(super) async fn complete_scriptable_openai_login(
         },
     )?;
     if !options.json {
-        eprintln!(
-            "Successfully logged in to OpenAI! Account '{}' saved to {}",
-            account_label,
-            credentials_path.display()
-        );
+        eprintln!("Successfully logged in to OpenAI! Account [redacted] saved locally.");
     }
     Ok(LoginFlowOutcome::Completed)
 }
@@ -420,8 +412,8 @@ pub(super) async fn complete_scriptable_gemini_login(
     if !options.json {
         eprintln!("Successfully logged in to Gemini!");
         eprintln!("Tokens saved to {}", auth::gemini::tokens_path()?.display());
-        if let Some(email) = tokens.email.as_deref() {
-            eprintln!("Google account: {}", email);
+        if tokens.email.is_some() {
+            eprintln!("Google account: [redacted]");
         }
     }
     Ok(LoginFlowOutcome::Completed)
@@ -473,11 +465,11 @@ pub(super) async fn complete_scriptable_antigravity_login(
             "Tokens saved to {}",
             auth::antigravity::tokens_path()?.display()
         );
-        if let Some(email) = tokens.email.as_deref() {
-            eprintln!("Google account: {}", email);
+        if tokens.email.is_some() {
+            eprintln!("Google account: [redacted]");
         }
-        if let Some(project_id) = tokens.project_id.as_deref() {
-            eprintln!("Resolved Antigravity project: {}", project_id);
+        if tokens.project_id.is_some() {
+            eprintln!("Resolved Antigravity project: [redacted]");
         }
     }
     Ok(LoginFlowOutcome::Completed)
@@ -531,8 +523,8 @@ pub(super) async fn complete_scriptable_google_login(
     )?;
     if !options.json {
         eprintln!("Successfully logged in to Google/Gmail!");
-        if let Some(email) = tokens.email.as_deref() {
-            eprintln!("Account: {}", email);
+        if tokens.email.is_some() {
+            eprintln!("Account: [redacted]");
         }
         eprintln!("Access tier: {}", tokens.tier.label());
         eprintln!("Tokens saved to {}", auth::google::tokens_path()?.display());
@@ -573,7 +565,7 @@ pub(super) async fn complete_scriptable_copilot_login(
         },
     )?;
     if !options.json {
-        eprintln!("✓ Authenticated as {} via GitHub Copilot", username);
+        eprintln!("✓ Authenticated as [redacted] via GitHub Copilot");
         eprintln!("Saved at {}", auth::copilot::saved_hosts_path().display());
     }
     Ok(LoginFlowOutcome::Completed)
@@ -745,7 +737,7 @@ pub(super) fn emit_scriptable_auth_success(
     success: ScriptableAuthSuccess,
 ) -> Result<()> {
     if json {
-        println!("{}", serde_json::to_string(&success)?);
+        println!("{}", serde_json::to_string(&success.redacted_for_output())?);
     }
     Ok(())
 }

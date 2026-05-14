@@ -81,23 +81,25 @@ struct GoalInput {
     display: Option<String>,
 }
 
-fn goal_step_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": true
-    })
-}
-
 fn goal_milestone_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
+            "id": {"type": "string", "description": "Milestone ID."},
+            "title": {"type": "string", "description": "Milestone title."},
+            "status": {"type": "string", "description": "Milestone status (e.g. pending, completed)."},
             "steps": {
                 "type": "array",
-                "items": goal_step_schema()
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Step ID."},
+                        "content": {"type": "string", "description": "Step description."},
+                        "status": {"type": "string", "description": "Step status (e.g. pending, completed)."}
+                    }
+                }
             }
-        },
-        "additionalProperties": true
+        }
     })
 }
 
@@ -108,7 +110,7 @@ impl Tool for GoalTool {
     }
 
     fn description(&self) -> &str {
-        "Manage goals."
+        "Manage goals and milestones for tracking project progress."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -120,12 +122,12 @@ impl Tool for GoalTool {
                 "action": {
                     "type": "string",
                     "enum": ["create", "list", "show", "resume", "update", "checkpoint", "focus"],
-                    "description": "Action."
+                    "description": "Goal operation: list, create, show, resume, update, checkpoint, focus."
                 },
-                "id": {"type": "string"},
+                "id": {"type": "string", "description": "Goal ID."},
                 "title": {"type": "string"},
-                "scope": {"type": "string"},
-                "status": {"type": "string"},
+                "scope": {"type": "string", "description": "Goal scope: project, global."},
+                "status": {"type": "string", "description": "Goal status: draft, active, paused, blocked, completed, archived, abandoned."},
                 "description": {"type": "string"},
                 "why": {"type": "string"},
                 "success_criteria": {"type": "array", "items": {"type": "string"}},
@@ -134,7 +136,11 @@ impl Tool for GoalTool {
                 "blockers": {"type": "array", "items": {"type": "string"}},
                 "current_milestone_id": {"type": "string"},
                 "progress_percent": {"type": "integer"},
-                "checkpoint_summary": {"type": "string"}
+                "checkpoint_summary": {"type": "string"},
+                "display": {
+                    "type": "string",
+                    "description": "Side panel display mode: auto, focus, update_only, none."
+                }
             }
         })
     }

@@ -383,7 +383,7 @@ async fn run() -> Result<()> {
                                 session_launch::launch_validated_resume_session(&session_id, &title)
                             {
                                 eprintln!(
-                                    "jcode-desktop: failed to open session {session_id}: {error:#}"
+                                    "jcode-desktop: failed to open session [redacted]: {error:#}"
                                 );
                             }
                         }
@@ -442,7 +442,7 @@ async fn run() -> Result<()> {
                                         window.request_redraw();
                                     }
                                     Err(error) => eprintln!(
-                                        "jcode-desktop: failed to send image draft to {session_id}: {error:#}"
+                                        "jcode-desktop: failed to send image draft to session [redacted]: {error:#}"
                                     ),
                                 }
                             } else if let Err(error) = session_launch::send_message_to_session(
@@ -451,7 +451,7 @@ async fn run() -> Result<()> {
                                 &message,
                             ) {
                                 eprintln!(
-                                    "jcode-desktop: failed to send draft to {session_id}: {error:#}"
+                                    "jcode-desktop: failed to send draft to session [redacted]: {error:#}"
                                 );
                             } else {
                                 std::thread::sleep(SESSION_SPAWN_REFRESH_DELAY);

@@ -175,7 +175,7 @@ impl Tool for AgentGrepTool {
     }
 
     fn description(&self) -> &str {
-        "Search code and file names. Defaults to grep mode when mode is omitted."
+        "Search code and file names. Defaults to grep mode when mode is omitted. For regex search, use grep. For semantic search, use codesearch. For files by glob pattern, use glob."
     }
 
     fn parameters_schema(&self) -> Value {

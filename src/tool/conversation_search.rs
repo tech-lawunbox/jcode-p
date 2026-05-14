@@ -51,7 +51,7 @@ impl Tool for ConversationSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search conversation history."
+        "Search the current conversation history. For searching past sessions, use session_search."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -340,6 +340,7 @@ mod tests {
             stdin_request_tx: None,
             graceful_shutdown_signal: None,
             execution_mode: crate::tool::ToolExecutionMode::Direct,
+            swarm_id: None,
         };
 
         (ctx, base, previous_home)

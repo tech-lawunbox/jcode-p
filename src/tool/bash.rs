@@ -560,7 +560,7 @@ impl Tool for BashTool {
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Timeout in ms."
+                    "description": "Maximum execution time in milliseconds (default: 120000 / 2 minutes)."
                 },
                 "run_in_background": {
                     "type": "boolean",

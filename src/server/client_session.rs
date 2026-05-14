@@ -296,6 +296,12 @@ async fn ensure_client_swarm_member(
             if member_name.is_some() {
                 member.friendly_name = member_name.clone();
             }
+            // Sync working_dir from agent session to SwarmMember on reconnect.
+            // This ensures the coordinator's working_dir is always up-to-date
+            // for spawn resolution, preventing fallback to stale or default cwd.
+            if let Some(ref dir) = working_dir {
+                member.working_dir = Some(dir.clone());
+            }
         } else {
             let now = Instant::now();
             members.insert(
@@ -314,6 +320,7 @@ async fn ensure_client_swarm_member(
                     detail: None,
                     friendly_name: member_name.clone(),
                     report_back_to_session_id: None,
+                    run_id: None,
                     latest_completion_report: None,
                     role: "agent".to_string(),
                     joined_at: now,
@@ -563,9 +570,9 @@ async fn subscribe_should_mark_ready(
     swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
 ) -> bool {
     let members = swarm_members.read().await;
-    !members
+    members
         .get(client_session_id)
-        .is_some_and(|member| member.status == "running")
+        .is_none_or(|member| member.status != "running")
 }
 
 pub(super) async fn handle_reload(

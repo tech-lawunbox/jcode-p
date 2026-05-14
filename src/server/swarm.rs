@@ -1,5 +1,7 @@
 use super::state::{MAX_EVENT_HISTORY, fanout_session_event};
-use super::{FileAccess, SwarmEvent, SwarmEventType, SwarmMember, SwarmState, VersionedPlan};
+use super::{
+    FileAccess, SessionAgents, SwarmEvent, SwarmEventType, SwarmMember, SwarmState, VersionedPlan,
+};
 use super::{persist_swarm_state_for, remove_persisted_swarm_state_for};
 use crate::agent::Agent;
 use crate::plan::{PlanItem, newly_ready_item_ids};
@@ -686,8 +688,23 @@ pub(super) async fn update_member_status(
         event_history,
         event_counter,
         swarm_event_tx,
+        None, // sessions
+        None, // stop_worker_on_completion
     )
     .await;
+}
+
+/// Set the report_back_to_session_id on a swarm member.
+/// This ensures the member reports completion to the specified session.
+pub(super) async fn set_member_report_back_to(
+    session_id: &str,
+    report_to_session_id: &str,
+    swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
+) {
+    let mut members = swarm_members.write().await;
+    if let Some(member) = members.get_mut(session_id) {
+        member.report_back_to_session_id = Some(report_to_session_id.to_string());
+    }
 }
 
 #[expect(
@@ -704,6 +721,10 @@ pub(super) async fn update_member_status_with_report(
     event_history: Option<&Arc<RwLock<std::collections::VecDeque<SwarmEvent>>>>,
     event_counter: Option<&Arc<std::sync::atomic::AtomicU64>>,
     swarm_event_tx: Option<&broadcast::Sender<SwarmEvent>>,
+    sessions: Option<&SessionAgents>,
+    // If true, stop/cleanup the worker session after reporting completion.
+    // Used when spawned agents report back to the coordinator.
+    stop_worker_on_completion: Option<bool>,
 ) {
     let completion_report = normalize_completion_report(completion_report);
     let (
@@ -813,10 +834,54 @@ pub(super) async fn update_member_status_with_report(
                             scope: Some("swarm".to_string()),
                             channel: None,
                         },
-                        message: msg,
+                        message: msg.clone(),
                     },
                 )
                 .await;
+
+                // Inject swarm completion report into coordinator's pending alerts
+                // so it appears in the agent's next conversation turn
+                if let Some(sessions) = sessions {
+                    let sessions_guard = sessions.read().await;
+                    if let Some(agent_arc) = sessions_guard.get(&recipient_session_id) {
+                        if let Ok(mut agent) = agent_arc.try_lock() {
+                            agent.push_alert(msg);
+                        }
+                    }
+                }
+
+                // Auto-cleanup: close worker now that coordinator has received the report
+                if stop_worker_on_completion.unwrap_or(true)
+                    && status == "ready"
+                    && swarm_id.is_some()
+                {
+                    let _ = fanout_session_event(
+                        swarm_members,
+                        session_id,
+                        ServerEvent::SessionCloseRequested {
+                            reason: "Worker completed and reported back to coordinator".to_string(),
+                        },
+                    )
+                    .await;
+
+                    if let Some(sessions) = sessions {
+                        sessions.write().await.remove(session_id);
+                    }
+
+                    let target_session = session_id.to_string();
+                    let coordinator = report_back_to_session_id.clone();
+                    let members = Arc::clone(swarm_members);
+                    let by_id = Arc::clone(swarms_by_id);
+                    tokio::spawn(async move {
+                        super::comm_session::cleanup_swarm_worker_session(
+                            &target_session,
+                            coordinator.as_deref(),
+                            &members,
+                            &by_id,
+                        )
+                        .await;
+                    });
+                }
             }
         }
     }
@@ -843,6 +908,7 @@ pub(super) async fn run_swarm_task(
         Some(format!("{} (@{} swarm)", description, subagent_type)),
     );
     session.model = Some(coordinator_model);
+    session.swarm_id = agent.lock().await.swarm_id().map(|s| s.to_string());
     if let Some(dir) = working_dir {
         session.working_dir = Some(dir.display().to_string());
     }
@@ -1042,6 +1108,7 @@ mod tests {
                 detail: None,
                 friendly_name: Some(session_id.to_string()),
                 report_back_to_session_id: None,
+                run_id: None,
                 latest_completion_report: None,
                 role: role.to_string(),
                 joined_at: Instant::now(),
@@ -1382,6 +1449,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None, // stop_worker_on_completion
         )
         .await;
 

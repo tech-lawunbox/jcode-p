@@ -621,6 +621,7 @@ fn launch_manual_subagent(app: &mut App, spec: ManualSubagentSpec) {
     let registry = app.registry.clone();
     let session_id = app.session.id.clone();
     let working_dir = app.session.working_dir.clone();
+    let swarm_id = app.session.swarm_id.clone();
     let tool_call_for_task = tool_call.clone();
     tokio::spawn(async move {
         Bus::global().publish(BusEvent::ToolUpdated(ToolEvent {
@@ -640,6 +641,7 @@ fn launch_manual_subagent(app: &mut App, spec: ManualSubagentSpec) {
             stdin_request_tx: None,
             graceful_shutdown_signal: None,
             execution_mode: crate::tool::ToolExecutionMode::Direct,
+            swarm_id,
         };
 
         let start = Instant::now();
@@ -784,6 +786,190 @@ pub(super) fn handle_help_command(app: &mut App, trimmed: &str) -> bool {
     }
 
     false
+}
+
+pub(super) fn handle_init_command(app: &mut App, trimmed: &str) -> bool {
+    let Some(init_args) = parse_init_command(trimmed) else {
+        if trimmed.starts_with("/init ") {
+            app.push_display_message(DisplayMessage::error(
+                "Usage: `/init [--force] [--yes] [--no-swarm]`".to_string(),
+            ));
+            return true;
+        }
+        return false;
+    };
+
+    let root = app
+        .session
+        .working_dir
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    match crate::project_init::run_project_init(
+        &root,
+        crate::project_init::ProjectInitOptions {
+            force: init_args.force,
+            yes: init_args.yes,
+            include_memory_wiki: true,
+        },
+    ) {
+        Ok(report) => {
+            let content = format_init_side_panel(&report);
+            match crate::side_panel::write_markdown_page(
+                active_session_id(app).as_str(),
+                "jcode-init",
+                Some("Jcode Init"),
+                &content,
+                true,
+            ) {
+                Ok(snapshot) => app.set_side_panel_snapshot(snapshot),
+                Err(error) => app.push_display_message(DisplayMessage::error(format!(
+                    "Initialized project, but failed to open side panel: {}",
+                    error
+                ))),
+            }
+            app.push_display_message(DisplayMessage::system(format!(
+                "Initialized jcode-harness project at {}. Wrote {} file(s), skipped {} existing file(s). Review `.jcode/INIT_QUESTIONS.md` and `.jcode/MCP_PLAN.md`.",
+                report.root.display(),
+                report.files_written.len(),
+                report.files_skipped.len()
+            )));
+            if init_args.swarm {
+                app.hidden_queued_system_messages
+                    .push(build_init_swarm_system_reminder(&report));
+                if app.is_processing {
+                    app.push_display_message(DisplayMessage::system(
+                        "Queued `/init` swarm analysis. It will run after the current turn and will block dependent synthesis until discovery agents report.".to_string(),
+                    ));
+                    app.set_status_notice("Queued /init swarm");
+                } else {
+                    app.pending_queued_dispatch = true;
+                    app.push_display_message(DisplayMessage::system(
+                        "Running `/init` swarm analysis with parallel agents and blocking synthesis barriers.".to_string(),
+                    ));
+                    app.set_status_notice("Running /init swarm");
+                }
+            } else {
+                app.set_status_notice("Project initialized");
+            }
+        }
+        Err(error) => {
+            app.push_display_message(DisplayMessage::error(format!("/init failed: {}", error)));
+            app.set_status_notice("/init failed");
+        }
+    }
+    true
+}
+
+#[derive(Debug, Clone, Copy)]
+struct InitCommandArgs {
+    force: bool,
+    yes: bool,
+    swarm: bool,
+}
+
+fn parse_init_command(trimmed: &str) -> Option<InitCommandArgs> {
+    let rest = trimmed.strip_prefix("/init")?;
+    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let mut args = InitCommandArgs {
+        force: false,
+        yes: false,
+        swarm: true,
+    };
+    for token in rest.split_whitespace() {
+        match token {
+            "--force" => args.force = true,
+            "--yes" => args.yes = true,
+            "--no-swarm" => args.swarm = false,
+            _ => return None,
+        }
+    }
+    Some(args)
+}
+
+fn build_init_swarm_system_reminder(report: &crate::project_init::ProjectInitReport) -> String {
+    format!(
+        "The user invoked `/init` for this project. Static scaffolding has already been written under `{root}`. You must now perform the LLM-driven swarm analysis phase, not merely summarize the static files.\n\n\
+Goal: produce a project-specific jcode-harness initialization analysis using multiple agents in a swarm, with blocking barriers for dependent phases.\n\n\
+Required workflow:\n\
+1. Use the `todo` tool to track these phases: discovery fan-out, barrier wait, synthesis, verification plan, final status.\n\
+2. Use the `swarm` tool to start or spawn parallel agents for at least these roles:\n\
+   - architect: repository structure, architecture boundaries, core workflows, high-risk areas.\n\
+   - qa: test commands, CI gaps, validation strategy, risky untested behavior.\n\
+   - documenter: README/docs/onboarding/AGENTS.md improvements and missing project context.\n\
+   - tooling-security: package managers, MCP candidates, secrets boundaries, automation risks.\n\
+3. Treat discovery as parallel and synthesis as blocking: do not write the final synthesis until all discovery agents have reported or are explicitly marked blocked. Use `swarm await_members` or equivalent before synthesis.\n\
+4. Read and use `.jcode/init/SWARM_ANALYSIS_PLAN.md`, `.jcode/INIT_REPORT.md`, `.jcode/INIT_QUESTIONS.md`, `.jcode/SKILLS_PLAN.md`, `.jcode/MCP_PLAN.md`, and key repository files discovered by the agents.\n\
+5. Write the final synthesis to `.jcode/init/SWARM_ANALYSIS_REPORT.md`. Update `.jcode/SKILLS_PLAN.md`, `.jcode/MCP_PLAN.md`, and `.jcode/side_panel/status.md` only with evidence-backed project-specific findings.\n\
+6. Use the `side_panel` tool to focus a page titled `Jcode Init Swarm` summarizing status, agents, findings, validation commands, risks, and open questions.\n\
+7. Do not store secrets, tokens, private keys, `.env` values, or credentials. Mark unknowns honestly. Do not invent validation commands absent from repo evidence.\n\n\
+Static init summary:\n\
+- Root: {root}\n\
+- Files written: {written}\n\
+- Files skipped: {skipped}\n\
+- Detected stack seed: {stack}\n\n\
+Completion condition: all swarm discovery roles have either reported or been recorded as blocked; `.jcode/init/SWARM_ANALYSIS_REPORT.md` exists with the final synthesis; side panel has been updated; todos are completed or explicitly blocked.",
+        root = report.root.display(),
+        written = report.files_written.len(),
+        skipped = report.files_skipped.len(),
+        stack = if report.detected_stack.is_empty() {
+            "none".to_string()
+        } else {
+            report.detected_stack.join(", ")
+        },
+    )
+}
+
+fn format_init_side_panel(report: &crate::project_init::ProjectInitReport) -> String {
+    let written = report
+        .files_written
+        .iter()
+        .map(|p| format!("- {}", p.display()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let skipped = report
+        .files_skipped
+        .iter()
+        .map(|p| format!("- {}", p.display()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let stack = if report.detected_stack.is_empty() {
+        "- Not detected yet".to_string()
+    } else {
+        report
+            .detected_stack
+            .iter()
+            .map(|s| format!("- {}", s))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let next = report
+        .next_steps
+        .iter()
+        .map(|s| format!("- {}", s))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "# Jcode Init\n\n## Root\n\n{}\n\n## Detected stack\n\n{}\n\n## Files written\n\n{}\n\n## Files skipped\n\n{}\n\n## Next steps\n\n{}\n",
+        report.root.display(),
+        stack,
+        if written.is_empty() {
+            "- None"
+        } else {
+            &written
+        },
+        if skipped.is_empty() {
+            "- None"
+        } else {
+            &skipped
+        },
+        next,
+    )
 }
 
 fn build_btw_loading_markdown(question: &str) -> String {

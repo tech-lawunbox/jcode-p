@@ -97,7 +97,7 @@ pub(crate) fn configure_provider_profile(
 
     let api_base = normalize_api_base(&options.base_url).ok_or_else(|| {
         anyhow::anyhow!(
-            "Invalid --base-url '{}'. Use https://... or http://localhost/127.0.0.1/private-LAN for local servers.",
+            "Invalid --base-url '{}'. Use https://... or an HTTP local endpoint such as localhost, RFC1918 LAN, Tailscale/CGNAT 100.64.0.0/10, link-local, or .local mDNS.",
             options.base_url
         )
     })?;
@@ -183,7 +183,18 @@ pub(crate) fn configure_provider_profile(
     };
 
     let config_path = Config::path().ok_or_else(|| anyhow::anyhow!("No config path"))?;
-    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            return Err(err).with_context(|| {
+                format!(
+                    "failed to read existing config at {}",
+                    config_path.display()
+                )
+            });
+        }
+    };
     let existing = parse_config_or_default(&content).with_context(|| {
         format!(
             "failed to parse existing config at {}",
@@ -267,7 +278,9 @@ fn validate_profile_name(raw: &str) -> Result<String> {
         anyhow::bail!("provider profile name must be at most 64 characters");
     }
     let mut chars = name.chars();
-    let first = chars.next().unwrap();
+    let Some(first) = chars.next() else {
+        anyhow::bail!("provider profile name cannot be empty");
+    };
     if !first.is_ascii_alphanumeric() {
         anyhow::bail!("provider profile name must start with a letter or number");
     }
@@ -577,7 +590,10 @@ fn auth_label(auth: &NamedProviderAuth) -> &'static str {
 }
 
 fn toml_quote(value: &str) -> String {
-    serde_json::to_string(value).expect("string serialization cannot fail")
+    match serde_json::to_string(value) {
+        Ok(quoted) => quoted,
+        Err(_) => format!("\"{}\"", value.escape_default()),
+    }
 }
 
 fn shell_quote(value: &str) -> String {
@@ -659,7 +675,7 @@ mod tests {
         let config_path = temp.path().join("config.toml");
         std::fs::write(
             &config_path,
-            "# keep this comment\n[provider]\nopenai_reasoning_effort = \"low\"\n",
+            "# keep this comment\n[provider]\nopenai_reasoning_effort = \"xhigh\"\n",
         )
         .expect("write config");
 

@@ -295,6 +295,7 @@ async fn resolve_assignment_target_for_task(
 )]
 fn spawn_assigned_task_run(
     agent_arc: Arc<Mutex<Agent>>,
+    coordinator_session_id: String,
     target_session: String,
     swarm_id: String,
     task_id: String,
@@ -306,6 +307,7 @@ fn spawn_assigned_task_run(
     event_history: Arc<RwLock<std::collections::VecDeque<SwarmEvent>>>,
     event_counter: Arc<std::sync::atomic::AtomicU64>,
     swarm_event_tx: broadcast::Sender<SwarmEvent>,
+    sessions: SessionAgents,
 ) {
     let assignment_text = append_swarm_completion_report_instructions(&assignment_text);
     tokio::spawn(async move {
@@ -346,6 +348,15 @@ fn spawn_assigned_task_run(
             &swarms_by_id,
         )
         .await;
+
+        // Set report_back_to so worker knows to report completion to coordinator
+        crate::server::swarm::set_member_report_back_to(
+            &target_session,
+            &coordinator_session_id,
+            &swarm_members,
+        )
+        .await;
+
         update_member_status(
             &target_session,
             "running",
@@ -493,6 +504,8 @@ fn spawn_assigned_task_run(
                     Some(&event_history),
                     Some(&event_counter),
                     Some(&swarm_event_tx),
+                    Some(&sessions),
+                    None, // stop_worker_on_completion - task runner handles lifecycle
                 )
                 .await;
             }
@@ -680,7 +693,7 @@ pub(super) async fn handle_comm_assign_role(
     event_history: &Arc<RwLock<std::collections::VecDeque<SwarmEvent>>>,
     event_counter: &Arc<std::sync::atomic::AtomicU64>,
     swarm_event_tx: &broadcast::Sender<SwarmEvent>,
-    swarm_mutation_runtime: &SwarmMutationRuntime,
+    _swarm_mutation_runtime: &SwarmMutationRuntime,
 ) {
     let (swarm_id, is_coordinator) = {
         let members = swarm_members.read().await;
@@ -745,38 +758,16 @@ pub(super) async fn handle_comm_assign_role(
         }
     };
 
-    let mutation_key = swarm_mutation_request_key(
-        &req_session_id,
-        "assign_role",
-        &[swarm_id.clone(), target_session.clone(), role.clone()],
-    );
-    let Some(mutation_state) = begin_swarm_mutation_or_replay(
-        swarm_mutation_runtime,
-        &mutation_key,
-        "assign_role",
-        &req_session_id,
-        id,
-        client_event_tx,
-    )
-    .await
-    else {
-        return;
-    };
-
     {
         let mut members = swarm_members.write().await;
         if let Some(member) = members.get_mut(&target_session) {
             member.role = role.clone();
         } else {
-            finish_swarm_mutation_request(
-                swarm_mutation_runtime,
-                &mutation_state,
-                PersistedSwarmMutationResponse::Error {
-                    message: format!("Unknown session '{}'", target_session),
-                    retry_after_secs: None,
-                },
-            )
-            .await;
+            let _ = client_event_tx.send(ServerEvent::Error {
+                id,
+                message: format!("Unknown session '{}'", target_session),
+                retry_after_secs: None,
+            });
             return;
         }
     }
@@ -787,10 +778,13 @@ pub(super) async fn handle_comm_assign_role(
             coordinators.insert(swarm_id.clone(), target_session.clone());
         }
         let mut members = swarm_members.write().await;
-        if let Some(member) = members.get_mut(&req_session_id)
-            && member.session_id != target_session
-        {
-            member.role = "agent".to_string();
+        for member in members.values_mut() {
+            if member.swarm_id.as_deref() == Some(swarm_id.as_str())
+                && member.session_id != target_session
+                && member.role == "coordinator"
+            {
+                member.role = "agent".to_string();
+            }
         }
     }
 
@@ -816,12 +810,7 @@ pub(super) async fn handle_comm_assign_role(
         },
     )
     .await;
-    finish_swarm_mutation_request(
-        swarm_mutation_runtime,
-        &mutation_state,
-        PersistedSwarmMutationResponse::Done,
-    )
-    .await;
+    let _ = client_event_tx.send(ServerEvent::Done { id });
 }
 
 #[expect(
@@ -1085,6 +1074,7 @@ pub(super) async fn handle_comm_assign_task(
             .any(|connection| connection.session_id == target_session)
     };
     if !target_has_client && let Some(agent_arc) = target_agent {
+        let coordinator_session_for_run = req_session_id.clone();
         let target_session_for_run = target_session.clone();
         let swarm_members_for_run = Arc::clone(swarm_members);
         let swarms_for_run = Arc::clone(swarms_by_id);
@@ -1095,9 +1085,11 @@ pub(super) async fn handle_comm_assign_task(
         let event_history_for_run = Arc::clone(event_history);
         let event_counter_for_run = Arc::clone(event_counter);
         let swarm_event_tx_for_run = swarm_event_tx.clone();
+        let sessions_for_run = Arc::clone(sessions);
         let assignment_text = combine_assignment_text(&content, message.as_deref());
         spawn_assigned_task_run(
             agent_arc,
+            coordinator_session_for_run,
             target_session_for_run,
             swarm_id_for_run,
             task_id_for_run,
@@ -1109,6 +1101,7 @@ pub(super) async fn handle_comm_assign_task(
             event_history_for_run,
             event_counter_for_run,
             swarm_event_tx_for_run,
+            sessions_for_run,
         );
     }
 
@@ -1157,6 +1150,7 @@ pub(super) async fn handle_comm_assign_next(
     prefer_spawn: Option<bool>,
     spawn_if_needed: Option<bool>,
     message: Option<String>,
+    run_id: Option<String>,
     client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
@@ -1216,6 +1210,8 @@ pub(super) async fn handle_comm_assign_next(
                 &swarm_id,
                 working_dir.clone(),
                 None,
+                run_id.clone(),
+                Some(swarm_id.clone()),
                 sessions,
                 global_session_id,
                 provider_template,
@@ -1528,6 +1524,7 @@ pub(super) async fn handle_comm_task_control(
             if agent_is_idle {
                 spawn_assigned_task_run(
                     agent_arc,
+                    req_session_id.clone(),
                     assignee.clone(),
                     swarm_id.clone(),
                     task_id.clone(),
@@ -1539,6 +1536,7 @@ pub(super) async fn handle_comm_task_control(
                     Arc::clone(event_history),
                     Arc::clone(event_counter),
                     swarm_event_tx.clone(),
+                    Arc::clone(sessions),
                 );
                 let summary = plan_graph_status_for(&swarm_id, swarm_plans).await;
                 let _ = client_event_tx.send(ServerEvent::CommTaskControlResponse {

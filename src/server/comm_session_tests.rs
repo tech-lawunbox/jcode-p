@@ -1,7 +1,7 @@
 use super::{
     ensure_spawn_coordinator_swarm, prepare_visible_spawn_session, register_visible_spawned_member,
     require_coordinator_swarm, resolve_spawn_working_dir, resolve_stop_target_session,
-    swarm_stop_allowed_by_owner,
+    spawn_mutation_key, swarm_stop_allowed_by_owner,
 };
 use crate::agent::Agent;
 use crate::message::{Message, ToolDefinition};
@@ -58,6 +58,7 @@ fn member(
             detail: None,
             friendly_name: Some(session_id.to_string()),
             report_back_to_session_id: None,
+            run_id: None,
             latest_completion_report: None,
             role: role.to_string(),
             joined_at: Instant::now(),
@@ -73,10 +74,11 @@ async fn test_agent_with_working_dir(session_id: &str, working_dir: &str) -> Arc
     let registry = Registry::new(provider.clone()).await;
     let mut session = crate::session::Session::create_with_id(session_id.to_string(), None, None);
     session.model = Some("mock".to_string());
-    session.working_dir = Some(working_dir.to_string());
-    Arc::new(Mutex::new(Agent::new_with_session(
+    let agent = Arc::new(Mutex::new(Agent::new_with_session(
         provider, registry, session, None,
-    )))
+    )));
+    agent.lock().await.set_working_dir(working_dir);
+    agent
 }
 
 #[tokio::test]
@@ -124,6 +126,54 @@ async fn resolve_spawn_working_dir_falls_back_to_member_dir() {
             .as_deref(),
         Some("/tmp/member-dir")
     );
+}
+
+#[test]
+fn spawn_mutation_key_uses_nonce_as_idempotency_key_despite_payload_drift() {
+    let operation_key = spawn_mutation_key(
+        "coord",
+        "swarm-1",
+        &Some("/repo-a".to_string()),
+        &Some("first prompt".to_string()),
+        &Some(" op:issue-13-spawn-1 ".to_string()),
+        &Some("run-1".to_string()),
+    );
+    let retry_with_drifted_payload = spawn_mutation_key(
+        "coord",
+        "swarm-1",
+        &Some("/repo-b".to_string()),
+        &Some("retry prompt drift".to_string()),
+        &Some("op:issue-13-spawn-1".to_string()),
+        &Some("run-1".to_string()),
+    );
+    let different_run = spawn_mutation_key(
+        "coord",
+        "swarm-1",
+        &Some("/repo-b".to_string()),
+        &Some("retry prompt drift".to_string()),
+        &Some("op:issue-13-spawn-1".to_string()),
+        &Some("run-2".to_string()),
+    );
+    let no_nonce = spawn_mutation_key(
+        "coord",
+        "swarm-1",
+        &Some("/repo-a".to_string()),
+        &Some("first prompt".to_string()),
+        &None,
+        &Some("run-1".to_string()),
+    );
+    let no_nonce_payload_drift = spawn_mutation_key(
+        "coord",
+        "swarm-1",
+        &Some("/repo-b".to_string()),
+        &Some("retry prompt drift".to_string()),
+        &None,
+        &Some("run-1".to_string()),
+    );
+
+    assert_eq!(operation_key, retry_with_drifted_payload);
+    assert_ne!(operation_key, different_run);
+    assert_ne!(no_nonce, no_nonce_payload_drift);
 }
 
 #[test]
@@ -197,6 +247,7 @@ async fn register_visible_spawned_member_marks_startup_as_running() {
         Some("/tmp/worktree"),
         true,
         Some("owner"),
+        Some("run-visible"),
         &swarm_members,
         &swarms_by_id,
         &event_history,
@@ -210,6 +261,7 @@ async fn register_visible_spawned_member_marks_startup_as_running() {
     assert_eq!(member.status, "running");
     assert_eq!(member.detail.as_deref(), Some("startup queued"));
     assert_eq!(member.swarm_id.as_deref(), Some("swarm-1"));
+    assert_eq!(member.run_id.as_deref(), Some("run-visible"));
     assert_eq!(
         member.working_dir.as_deref(),
         Some(std::path::Path::new("/tmp/worktree"))
@@ -229,6 +281,26 @@ async fn register_visible_spawned_member_marks_startup_as_running() {
             event.session_id == "child-1"
                 && matches!(event.event, SwarmEventType::MemberChange { ref action } if action == "joined")
         }));
+}
+
+#[test]
+fn prepare_visible_spawn_session_rejects_missing_or_blank_working_dir() {
+    let missing = prepare_visible_spawn_session(None, None, false, None, |_session_id, _cwd, _| {
+        panic!("launcher must not run without a working directory")
+    })
+    .expect_err("missing working_dir should fail before launch");
+    assert!(
+        missing
+            .to_string()
+            .contains("no working directory resolved")
+    );
+
+    let blank =
+        prepare_visible_spawn_session(Some("   "), None, false, None, |_session_id, _cwd, _| {
+            panic!("launcher must not run with a blank working directory")
+        })
+        .expect_err("blank working_dir should fail before launch");
+    assert!(blank.to_string().contains("no working directory resolved"));
 }
 
 #[test]

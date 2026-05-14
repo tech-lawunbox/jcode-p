@@ -57,7 +57,7 @@ impl Tool for GmailTool {
     }
 
     fn description(&self) -> &str {
-        "Use Gmail."
+        "Send, read, and manage Gmail messages, drafts, and labels."
     }
 
     fn parameters_schema(&self) -> Value {
@@ -71,21 +71,21 @@ impl Tool for GmailTool {
                     "enum": ["search", "read", "list", "draft", "send", "send_draft", "threads", "thread", "labels", "trash", "modify_labels"],
                     "description": "Action."
                 },
-                "query": { "type": "string" },
-                "message_id": { "type": "string" },
-                "thread_id": { "type": "string" },
-                "draft_id": { "type": "string" },
-                "to": { "type": "string" },
-                "subject": { "type": "string" },
-                "body": { "type": "string" },
-                "in_reply_to": { "type": "string" },
-                "max_results": { "type": "integer" },
-                "label_ids": { "type": "array", "items": { "type": "string" } },
-                "add_labels": { "type": "array", "items": { "type": "string" } },
-                "remove_labels": { "type": "array", "items": { "type": "string" } },
+                "query": { "type": "string", "description": "Gmail search query." },
+                "message_id": { "type": "string", "description": "Gmail message ID." },
+                "thread_id": { "type": "string", "description": "Gmail thread ID." },
+                "draft_id": { "type": "string", "description": "Gmail draft ID." },
+                "to": { "type": "string", "description": "Recipient email address(es), comma-separated." },
+                "subject": { "type": "string", "description": "Email subject line." },
+                "body": { "type": "string", "description": "Email body content." },
+                "in_reply_to": { "type": "string", "description": "Message ID this email is replying to." },
+                "max_results": { "type": "integer", "description": "Maximum number of results (1-500, default 100)." },
+                "label_ids": { "type": "array", "items": { "type": "string" }, "description": "Label IDs to filter by." },
+                "add_labels": { "type": "array", "items": { "type": "string" }, "description": "Labels to add to the message." },
+                "remove_labels": { "type": "array", "items": { "type": "string" }, "description": "Labels to remove from the message." },
                 "confirmed": {
                     "type": "boolean",
-                    "description": "Confirm."
+                    "description": "Set to true to confirm a destructive action (e.g. trash, delete)."
                 }
             }
         })

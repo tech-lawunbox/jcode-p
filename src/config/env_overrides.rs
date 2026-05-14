@@ -201,6 +201,32 @@ impl Config {
                 self.features.memory = parsed;
             }
         }
+        if let Ok(v) = std::env::var("JCODE_MEMORY_BACKEND") {
+            let value = v.trim().to_ascii_lowercase();
+            if matches!(
+                value.as_str(),
+                "legacy" | "wiki" | "llm-wiki" | "hybrid" | "off"
+            ) {
+                self.memory.backend = if value == "llm-wiki" {
+                    "wiki".into()
+                } else {
+                    value
+                };
+            }
+        }
+        if let Ok(v) = std::env::var("JCODE_MEMORY_WIKI_SCOPE") {
+            let value = v.trim().to_ascii_lowercase();
+            if matches!(
+                value.as_str(),
+                "global-cache" | "global" | "repo-local" | "local" | "project"
+            ) {
+                self.memory.wiki_scope = match value.as_str() {
+                    "global" => "global-cache".into(),
+                    "local" | "project" => "repo-local".into(),
+                    _ => value,
+                };
+            }
+        }
         if let Ok(v) = std::env::var("JCODE_SWARM_ENABLED") {
             if let Some(parsed) = parse_env_bool(&v) {
                 self.features.swarm = parsed;
@@ -437,6 +463,38 @@ impl Config {
             if !env_val.is_empty() {
                 crate::env::set_var("JCODE_COPILOT_PREMIUM", env_val);
             }
+        }
+
+        // Batch config
+        if let Ok(v) = std::env::var("JCODE_BATCH_MAX_PARALLEL") {
+            if let Ok(n) = v.parse() {
+                self.batch.max_parallel = Some(n);
+            }
+        }
+
+        // Subagent config
+        if let Ok(v) = std::env::var("JCODE_SUBAGENT_RUN_IN_BACKGROUND") {
+            self.subagent.run_in_background = parse_env_bool(&v);
+        }
+        if let Ok(v) = std::env::var("JCODE_SUBAGENT_OUTPUT_MODE") {
+            self.subagent.output_mode = Some(v);
+        }
+        if let Ok(v) = std::env::var("JCODE_SUBAGENT_MODEL") {
+            let v = v.trim();
+            self.subagent.model = if v.is_empty() {
+                None
+            } else {
+                Some(v.to_string())
+            };
+        }
+        if let Ok(v) = std::env::var("JCODE_SUBAGENT_BLOCKED_TOOLS") {
+            self.subagent.blocked_tools = Some(parse_env_list(&v));
+        }
+        if let Ok(v) = std::env::var("JCODE_SUBAGENT_NOTIFY") {
+            self.subagent.notify = parse_env_bool(&v);
+        }
+        if let Ok(v) = std::env::var("JCODE_SUBAGENT_WAKE") {
+            self.subagent.wake = parse_env_bool(&v);
         }
     }
 }

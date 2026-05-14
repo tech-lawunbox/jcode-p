@@ -34,7 +34,7 @@ impl Tool for EditTool {
     }
 
     fn description(&self) -> &str {
-        "Replace text in a file."
+        "Replace text in a file. For multiple edits in one call, use multiedit. For diff-based patches, use patch or apply_patch."
     }
 
     fn parameters_schema(&self) -> Value {

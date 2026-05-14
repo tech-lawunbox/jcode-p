@@ -363,6 +363,25 @@ pub struct AgentsConfig {
     pub memory_sidecar_enabled: bool,
 }
 
+/// Persistent memory backend configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MemoryConfig {
+    /// Memory backend: legacy, wiki, hybrid, or off. Defaults to legacy for compatibility.
+    pub backend: String,
+    /// LLM Wiki scope: global-cache or repo-local. Defaults to global-cache.
+    pub wiki_scope: String,
+}
+
+impl Default for MemoryConfig {
+    fn default() -> Self {
+        Self {
+            backend: "legacy".to_string(),
+            wiki_scope: "global-cache".to_string(),
+        }
+    }
+}
+
 /// Automatic end-of-turn code review configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -592,7 +611,7 @@ pub struct ProviderConfig {
     pub default_model: Option<String>,
     /// Default provider to use (claude|openai|copilot|openrouter)
     pub default_provider: Option<String>,
-    /// Reasoning effort for OpenAI Responses API (none|low|medium|high|xhigh)
+    /// Reasoning effort for OpenAI Responses API (none|low|medium|high|xhigh|max)
     pub openai_reasoning_effort: Option<String>,
     /// OpenAI transport mode (auto|websocket|https)
     pub openai_transport: Option<String>,
@@ -617,7 +636,7 @@ impl Default for ProviderConfig {
         Self {
             default_model: None,
             default_provider: None,
-            openai_reasoning_effort: Some("low".to_string()),
+            openai_reasoning_effort: Some("xhigh".to_string()),
             openai_transport: None,
             openai_service_tier: None,
             openai_native_compaction_mode: "auto".to_string(),
@@ -769,6 +788,51 @@ impl Default for GatewayConfig {
             enabled: false,
             port: 7643,
             bind_addr: "0.0.0.0".to_string(),
+        }
+    }
+}
+
+/// Batch tool configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BatchConfig {
+    /// Maximum number of parallel tool calls in a batch operation (default: 10)
+    pub max_parallel: Option<usize>,
+}
+
+impl Default for BatchConfig {
+    fn default() -> Self {
+        Self { max_parallel: None }
+    }
+}
+
+/// Subagent tool configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SubagentConfig {
+    /// Default run_in_background for subagent tool (default: false)
+    pub run_in_background: Option<bool>,
+    /// Default output mode: "answer", "compact", or "full_transcript" (default: "answer")
+    pub output_mode: Option<String>,
+    /// Default model for subagents (empty = use parent's model)
+    pub model: Option<String>,
+    /// Additional tools to block from subagents (always blocked: subagent, task, todo, todowrite, todoread)
+    pub blocked_tools: Option<Vec<String>>,
+    /// Notify when background subagent completes (default: true)
+    pub notify: Option<bool>,
+    /// Wake agent when background subagent completes (default: true)
+    pub wake: Option<bool>,
+}
+
+impl Default for SubagentConfig {
+    fn default() -> Self {
+        Self {
+            run_in_background: None,
+            output_mode: None,
+            model: None,
+            blocked_tools: None,
+            notify: None,
+            wake: None,
         }
     }
 }

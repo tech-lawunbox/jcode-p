@@ -50,13 +50,35 @@ pub fn header_name_color() -> Color {
 pub fn header_session_color() -> Color {
     rgb(255, 255, 255)
 }
+pub fn harness_brand_color() -> Color {
+    rgb(186, 139, 255)
+}
 
 // Spinner frames for animated status
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const STATIC_ACTIVITY_INDICATOR: &str = "•";
+const TOOL_ACTIVITY_WIDTH: usize = 5;
+const TOOL_ACTIVITY_IDLE: &str = "·····";
+const TOOL_ACTIVITY_LEFT_FRAMES: [&str; TOOL_ACTIVITY_WIDTH] =
+    ["●◆··◆", "◆●◆··", "·◆●◆·", "··◆●◆", "◆··◆●"];
+const TOOL_ACTIVITY_RIGHT_FRAMES: [&str; TOOL_ACTIVITY_WIDTH] =
+    ["◆··◆●", "··◆●◆", "·◆●◆·", "◆●◆··", "●◆··◆"];
+
+fn safe_animation_fps(fps: f32) -> f32 {
+    if fps.is_finite() && fps > 0.0 {
+        fps.min(120.0)
+    } else {
+        1.0
+    }
+}
 
 pub fn spinner_frame_index(elapsed: f32, fps: f32) -> usize {
-    ((elapsed * fps) as usize) % SPINNER_FRAMES.len()
+    let elapsed = if elapsed.is_finite() {
+        elapsed.max(0.0)
+    } else {
+        0.0
+    };
+    ((elapsed * safe_animation_fps(fps)) as usize) % SPINNER_FRAMES.len()
 }
 
 pub fn spinner_frame(elapsed: f32, fps: f32) -> &'static str {
@@ -84,6 +106,54 @@ pub fn activity_indicator(
         spinner_frame(elapsed, fps)
     } else {
         STATIC_ACTIVITY_INDICATOR
+    }
+}
+
+pub fn tool_activity_bars(
+    elapsed: f32,
+    enable_decorative_animations: bool,
+) -> (&'static str, &'static str) {
+    if !enable_decorative_animations {
+        return (TOOL_ACTIVITY_IDLE, TOOL_ACTIVITY_IDLE);
+    }
+
+    let elapsed = if elapsed.is_finite() {
+        elapsed.max(0.0)
+    } else {
+        0.0
+    };
+    let head = ((elapsed * 8.0) as usize) % TOOL_ACTIVITY_WIDTH;
+    (
+        TOOL_ACTIVITY_LEFT_FRAMES[head],
+        TOOL_ACTIVITY_RIGHT_FRAMES[head],
+    )
+}
+
+pub fn status_queue_suffix(pending_count: usize) -> Option<String> {
+    (pending_count > 0).then(|| format!(" · +{pending_count} queued"))
+}
+
+pub fn retry_delay_label(secs: u64) -> String {
+    if secs >= 3600 {
+        let hours = secs / 3600;
+        let mins = (secs % 3600) / 60;
+        format!("{hours}h {mins}m")
+    } else if secs >= 60 {
+        let mins = secs / 60;
+        let remaining_secs = secs % 60;
+        format!("{mins}m {remaining_secs}s")
+    } else {
+        format!("{secs}s")
+    }
+}
+
+pub fn cache_miss_label(miss_tokens: u64) -> String {
+    if miss_tokens >= 1000 {
+        format!("{}k", miss_tokens / 1000)
+    } else if miss_tokens > 0 {
+        miss_tokens.to_string()
+    } else {
+        "kv".to_string()
     }
 }
 
@@ -187,4 +257,61 @@ pub fn animated_tool_color(elapsed: f32, enable_decorative_animations: bool) -> 
     let b = (220.0 + t * 35.0) as u8; // 220 -> 255
 
     rgb(r, g, b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spinner_frame_index_tolerates_invalid_timing_inputs() {
+        assert_eq!(spinner_frame_index(f32::NAN, 12.5), 0);
+        assert_eq!(spinner_frame_index(1.0, f32::NAN), 1);
+        assert_eq!(spinner_frame_index(-10.0, 12.5), 0);
+        assert!(spinner_frame_index(10_000.0, 10_000.0) < SPINNER_FRAMES.len());
+    }
+
+    #[test]
+    fn activity_indicator_respects_reduced_motion() {
+        assert_eq!(
+            activity_indicator(10.0, 12.5, false),
+            STATIC_ACTIVITY_INDICATOR
+        );
+        assert_eq!(activity_indicator_frame_index(10.0, 12.5, false), 0);
+    }
+
+    #[test]
+    fn tool_activity_bars_are_stable_and_symmetric() {
+        let (left, right) = tool_activity_bars(0.0, true);
+        assert_eq!(left.chars().count(), TOOL_ACTIVITY_WIDTH);
+        assert_eq!(right.chars().count(), TOOL_ACTIVITY_WIDTH);
+        assert!(left.contains('●'));
+        assert_eq!(right, left.chars().rev().collect::<String>().as_str());
+
+        let (reduced_left, reduced_right) = tool_activity_bars(0.0, false);
+        assert_eq!(reduced_left, TOOL_ACTIVITY_IDLE);
+        assert_eq!(reduced_right, reduced_left);
+    }
+
+    #[test]
+    fn status_queue_suffix_only_allocates_when_pending() {
+        assert_eq!(status_queue_suffix(0), None);
+        assert_eq!(status_queue_suffix(3).as_deref(), Some(" · +3 queued"));
+    }
+
+    #[test]
+    fn retry_delay_label_formats_seconds_minutes_and_hours() {
+        assert_eq!(retry_delay_label(7), "7s");
+        assert_eq!(retry_delay_label(65), "1m 5s");
+        assert_eq!(retry_delay_label(3661), "1h 1m");
+    }
+
+    #[test]
+    fn cache_miss_label_formats_zero_exact_and_thousands() {
+        assert_eq!(cache_miss_label(0), "kv");
+        assert_eq!(cache_miss_label(42), "42");
+        assert_eq!(cache_miss_label(999), "999");
+        assert_eq!(cache_miss_label(1_000), "1k");
+        assert_eq!(cache_miss_label(12_345), "12k");
+    }
 }

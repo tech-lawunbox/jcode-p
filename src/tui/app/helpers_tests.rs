@@ -79,7 +79,7 @@ fn detected_resume_terminal_recognizes_handterm_term_program() {
 #[test]
 fn detected_resume_terminal_recognizes_tmux_session() {
     let _guard = EnvVarGuard::set_value("TMUX", "/tmp/tmux-501/default,123,0");
-    assert_eq!(detected_resume_terminal(), Some("tmux"));
+    assert_eq!(detected_resume_terminal().as_deref(), Some("tmux"));
 }
 
 #[cfg(unix)]

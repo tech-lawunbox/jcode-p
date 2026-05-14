@@ -1130,19 +1130,30 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn subscribe_metadata() -> (Option<String>, Option<bool>) {
-    let working_dir = std::env::current_dir().ok();
-    let working_dir_str = working_dir.as_ref().map(|p| p.display().to_string());
+pub(crate) fn subscribe_metadata(
+    session_working_dir: Option<&str>,
+) -> (Option<String>, Option<bool>) {
+    let cwd = session_working_dir
+        .map(|s| std::path::Path::new(s).to_path_buf())
+        .or_else(|| std::env::current_dir().ok());
+    let working_dir_str = cwd.as_ref().map(|p| p.display().to_string());
 
     let mut selfdev = crate::cli::selfdev::client_selfdev_requested();
-    if !selfdev && let Some(ref dir) = working_dir {
-        let mut current = Some(dir.as_path());
-        while let Some(path) = current {
-            if crate::build::is_jcode_repo(path) {
-                selfdev = true;
-                break;
+    if !selfdev {
+        // Project root detection is only for selfdev / jcode-repo checks,
+        // NOT for the session working directory — swarm agents inherit that.
+        let project_dir = cwd
+            .as_ref()
+            .and_then(|dir| crate::server::git_common_dir_for(dir).or_else(|| Some(dir.clone())));
+        if let Some(ref dir) = project_dir {
+            let mut current = Some(dir.as_path());
+            while let Some(path) = current {
+                if crate::build::is_jcode_repo(path) {
+                    selfdev = true;
+                    break;
+                }
+                current = path.parent();
             }
-            current = path.parent();
         }
     }
 

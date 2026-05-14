@@ -650,6 +650,10 @@ impl Agent {
         &self.session.id
     }
 
+    pub fn swarm_id(&self) -> Option<&str> {
+        self.session.swarm_id.as_deref()
+    }
+
     /// Mark this agent session as closed and persist it.
     pub fn mark_closed(&mut self) {
         crate::telemetry::end_session_with_reason(

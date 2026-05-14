@@ -140,6 +140,14 @@ impl Tool for ReadTool {
                     "type": "integer",
                     "description": "1-based start line for text files."
                 },
+                "end_line": {
+                    "type": "integer",
+                    "description": "1-based end line for text files (inclusive)."
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "0-based byte offset for text files."
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Max text lines to read. Default 5000."

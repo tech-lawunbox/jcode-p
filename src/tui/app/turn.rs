@@ -595,8 +595,8 @@ impl App {
                                             && current_tool.is_none()
                                             && self.streaming_text.is_empty()
                                             && !saw_message_end;
-                                        if no_partial_output {
-                                            if let Some(reason) = crate::network_retry::classify_message(&message) {
+                                        if no_partial_output
+                                            && let Some(reason) = crate::network_retry::classify_message(&message) {
                                                 let plan = crate::network_retry::wait_plan();
                                                 self.push_display_message(DisplayMessage::system(format!(
                                                     "Stream interrupted, likely because {reason}. Waiting to retry: {}.",
@@ -612,7 +612,6 @@ impl App {
                                                 ));
                                                 continue 'turn_loop;
                                             }
-                                        }
                                         return Err(anyhow::anyhow!("Stream error: {}", message));
                                     }
                                     StreamEvent::ThinkingStart => {
@@ -810,6 +809,7 @@ impl App {
                                             stdin_request_tx: None,
                                             graceful_shutdown_signal: None,
                                             execution_mode: crate::tool::ToolExecutionMode::AgentTurn,
+                                            swarm_id: self.session.swarm_id.clone(),
                                         };
                                         let tool_result = self.registry.execute(&tool_name, input, ctx).await;
                                         crate::telemetry::record_tool_call();
@@ -832,8 +832,8 @@ impl App {
                                     && current_tool.is_none()
                                     && self.streaming_text.is_empty()
                                     && !saw_message_end;
-                                if no_partial_output {
-                                    if let Some(reason) = crate::network_retry::classify_network_interruption(e.as_ref()) {
+                                if no_partial_output
+                                    && let Some(reason) = crate::network_retry::classify_network_interruption(e.as_ref()) {
                                         let plan = crate::network_retry::wait_plan();
                                         self.push_display_message(DisplayMessage::system(format!(
                                             "Stream interrupted, likely because {reason}. Waiting to retry: {}.",
@@ -849,7 +849,6 @@ impl App {
                                         ));
                                         continue 'turn_loop;
                                     }
-                                }
                                 return Err(e);
                             }
                             None => {
@@ -1068,6 +1067,7 @@ impl App {
                     stdin_request_tx: None,
                     graceful_shutdown_signal: None,
                     execution_mode: crate::tool::ToolExecutionMode::AgentTurn,
+                    swarm_id: self.session.swarm_id.clone(),
                 };
 
                 Bus::global().publish(BusEvent::ToolUpdated(ToolEvent {

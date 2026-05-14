@@ -638,6 +638,16 @@ pub(super) async fn process_remote_followups(app: &mut App, remote: &mut RemoteC
         return;
     }
 
+    // NEW: Check if swarm is active and should block reload
+    if app.pending_server_reload && !app.is_processing && app.swarm_reload_should_block() {
+        app.pending_server_reload = false;
+        app.push_display_message(DisplayMessage::system(
+            "ℹ Server update available but reload blocked: swarm is active. Use `/reload` after swarm completes.".to_string(),
+        ));
+        app.set_status_notice("Update ready — blocked by active swarm");
+        return;
+    }
+
     if app.pending_server_reload && !app.is_processing {
         app.pending_server_reload = false;
         if app.auto_server_reload {

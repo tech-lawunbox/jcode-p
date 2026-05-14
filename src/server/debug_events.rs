@@ -112,6 +112,8 @@ pub(super) async fn maybe_handle_event_subscription_command<W: AsyncWrite + Unpi
                     SwarmEventType::ContextUpdate { .. } => "context_update",
                     SwarmEventType::StatusChange { .. } => "status_change",
                     SwarmEventType::MemberChange { .. } => "member_change",
+                    SwarmEventType::ReloadRequested { .. } => "reload_requested",
+                    SwarmEventType::ReloadReady { .. } => "reload_ready",
                 };
                 if let Some(ref filter) = type_filter
                     && !filter.iter().any(|f| f == event_type)

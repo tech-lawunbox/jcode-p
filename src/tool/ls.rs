@@ -50,7 +50,7 @@ impl Tool for LsTool {
     }
 
     fn description(&self) -> &str {
-        "List directory contents."
+        "List directory contents. To find files by glob pattern, use glob."
     }
 
     fn parameters_schema(&self) -> Value {

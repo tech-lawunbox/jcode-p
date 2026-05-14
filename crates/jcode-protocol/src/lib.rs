@@ -442,6 +442,12 @@ pub enum Request {
         initial_message: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         request_nonce: Option<String>,
+        /// Optional run/generation id used to group workers spawned by one orchestration run.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        /// Explicit swarm ID to join (overrides working_dir derivation)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        swarm_id: Option<String>,
     },
 
     /// Stop/destroy an agent session (coordinator only)
@@ -543,6 +549,9 @@ pub enum Request {
         spawn_if_needed: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         message: Option<String>,
+        /// Optional run/generation id for workers spawned by this assignment request.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
     },
 
     /// Control an existing assigned task lifecycle (coordinator only)
@@ -584,9 +593,17 @@ pub enum Request {
         /// Specific session IDs to watch. If empty, watches all non-self members.
         #[serde(default)]
         session_ids: Vec<String>,
+        /// If true and `session_ids` is empty, snapshot only non-terminal workers spawned by this
+        /// session instead of watching every member in the swarm. Server handlers default this to
+        /// true for empty `session_ids` to avoid capturing stale agents from older runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owned_only: Option<bool>,
         /// Whether to wait for all matching members or wake when any member matches.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
+        /// Optional run/generation id used to scope implicit await candidates.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
         /// Timeout in seconds (default 3600 = 1 hour)
         #[serde(default)]
         timeout_secs: Option<u64>,
@@ -596,7 +613,7 @@ pub enum Request {
 /// Server event sent to client
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[expect(
+#[allow(
     clippy::large_enum_variant,
     reason = "wire protocol prioritizes straightforward serde payloads over boxing every larger event variant"
 )]
@@ -1240,6 +1257,9 @@ pub struct AgentInfo {
     /// Session that owns report-back/cleanup responsibility for this member.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_back_to_session_id: Option<String>,
+    /// Run/generation id for the orchestration run that spawned this member.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
     /// Latest structured completion report submitted by this member, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_completion_report: Option<String>,
@@ -1408,6 +1428,10 @@ pub fn default_comm_cleanup_target_statuses() -> Vec<String> {
         "completed".to_string(),
         "failed".to_string(),
         "stopped".to_string(),
+        "crashed".to_string(),
+        "closed".to_string(),
+        "disconnected".to_string(),
+        "running_stale".to_string(),
     ]
 }
 
@@ -1545,6 +1569,9 @@ pub fn format_comm_members(current_session_id: &str, members: &[AgentInfo]) -> S
                     extra_meta.push(format!("owned_by={owner}"));
                 }
             }
+            if let Some(run_id) = member.run_id.as_deref() {
+                extra_meta.push(format!("run_id={run_id}"));
+            }
             if let Some(attachments) = member.live_attachments {
                 extra_meta.push(format!("attachments={attachments}"));
             }
@@ -1562,11 +1589,10 @@ pub fn format_comm_members(current_session_id: &str, members: &[AgentInfo]) -> S
                 role_label,
                 if is_me { "you" } else { session },
                 status,
-                member
-                    .detail
-                    .as_deref()
-                    .map(|detail| format!(" — {}", detail))
-                    .unwrap_or_default(),
+                match member.detail.as_deref() {
+                    Some(detail) => format!(" — {}", detail),
+                    None => String::new(),
+                },
                 if files.is_empty() {
                     String::new()
                 } else {
@@ -1767,7 +1793,7 @@ pub fn resolve_optional_comm_target_session(
 ) -> String {
     match target.as_deref() {
         Some("current") | None => current_session.to_string(),
-        Some(_) => target.expect("target is Some when as_deref returned Some"),
+        Some(value) => value.to_string(),
     }
 }
 
